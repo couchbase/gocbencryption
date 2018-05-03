@@ -1,17 +1,17 @@
 package gocbfieldcrypt
 
 import (
-	"crypto/sha256"
-	"crypto/rsa"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 )
 
 type RsaCryptoProvider struct {
-	KeyStore KeyProvider
-	PublicKey string
+	KeyStore   KeyProvider
+	PublicKey  string
 	PrivateKey string
 }
 

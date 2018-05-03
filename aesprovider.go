@@ -1,21 +1,21 @@
 package gocbfieldcrypt
 
 import (
-	"encoding/json"
 	"crypto/aes"
 	"crypto/cipher"
-	"encoding/base64"
-	"errors"
-	"fmt"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
 )
 
 type AesCryptoProvider struct {
 	KeyStore KeyProvider
-	Key string
-	HmacKey string
+	Key      string
+	HmacKey  string
 }
 
 func (cp *AesCryptoProvider) getAlgNameFromKey(key, hmacKey []byte) (string, error) {

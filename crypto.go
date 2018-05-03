@@ -36,7 +36,7 @@ type cipherData struct {
 
 type FieldDefinition struct {
 	Algorithm string
-	KeyId string
+	KeyId     string
 }
 
 func providerFromField(f field, keys KeyProvider) (CryptoProvider, error) {
@@ -50,8 +50,8 @@ func providerFromField(f field, keys KeyProvider) (CryptoProvider, error) {
 
 		return &AesCryptoProvider{
 			KeyStore: keys,
-			Key: f.options[0],
-			HmacKey: f.options[1],
+			Key:      f.options[0],
+			HmacKey:  f.options[1],
 		}, nil
 	case "rsa2048":
 		fallthrough
@@ -61,8 +61,8 @@ func providerFromField(f field, keys KeyProvider) (CryptoProvider, error) {
 		}
 
 		return &RsaCryptoProvider{
-			KeyStore: keys,
-			PublicKey: f.options[0],
+			KeyStore:   keys,
+			PublicKey:  f.options[0],
 			PrivateKey: f.options[1],
 		}, nil
 	}
@@ -103,7 +103,7 @@ func EncryptJsonFields(bytes []byte, fields map[string]CryptoProvider) ([]byte, 
 				return nil, err
 			}
 
-			doc["__crypt_" + field] = encData
+			doc["__crypt_"+field] = encData
 			delete(doc, field)
 		}
 	}
@@ -125,14 +125,14 @@ func DecryptJsonFields(bytes []byte, fields map[string]CryptoProvider) ([]byte, 
 	}
 
 	for field, crypt := range fields {
-		if val, ok := doc["__crypt_" + field]; ok {
+		if val, ok := doc["__crypt_"+field]; ok {
 			encData, err := crypt.Decrypt(val)
 			if err != nil {
 				return nil, err
 			}
 
 			doc[field] = encData
-			delete(doc, "__crypt_" + field)
+			delete(doc, "__crypt_"+field)
 		}
 	}
 

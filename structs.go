@@ -2,14 +2,14 @@ package gocbfieldcrypt
 
 import (
 	"reflect"
-	"sync/atomic"
-	"sync"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 type field struct {
 	algorithm string
-	options []string
+	options   []string
 }
 
 var fieldCache struct {
@@ -39,7 +39,7 @@ func typeFields(t reflect.Type) map[string]field {
 		options := strings.Split(tag, ",")
 		fields[fieldName] = field{
 			algorithm: options[0],
-			options: options[1:],
+			options:   options[1:],
 		}
 	}
 

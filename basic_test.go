@@ -1,23 +1,23 @@
 package gocbfieldcrypt
 
 import (
-	"testing"
-	"encoding/json"
-	"encoding/hex"
-	"reflect"
-	"crypto/rsa"
 	"crypto/rand"
+	"crypto/rsa"
+	"encoding/hex"
+	"encoding/json"
+	"reflect"
+	"testing"
 )
 
 type testSubStruct struct {
 	TestString string
-	TestNum int
+	TestNum    int
 }
 
 type testCryptStruct struct {
-	NoCrypt string
-	CryptString string `cbcrypt:"aes256,somekey,hmackey"`
-	CryptNum int `cbcrypt:"aes256,somekey,hmackey"`
+	NoCrypt      string
+	CryptString  string        `cbcrypt:"aes256,somekey,hmackey"`
+	CryptNum     int           `cbcrypt:"aes256,somekey,hmackey"`
 	CryptoStruct testSubStruct `cbcrypt:"rsa2048,rsapubkey,rsaprivkey"`
 }
 
@@ -29,20 +29,20 @@ func TestJsonStruct(t *testing.T) {
 	testKey, _ := hex.DecodeString("1234567890123456123456789012345612345678901234561234567890123456")
 	keyStore := &InsecureKeystore{
 		Keys: map[string][]byte{
-			"somekey": testKey,
-			"hmackey": testKey,
+			"somekey":    testKey,
+			"hmackey":    testKey,
 			"rsaprivkey": rsaPrivateKey,
-			"rsapubkey": rsaPublicKey,
+			"rsapubkey":  rsaPublicKey,
 		},
 	}
 
 	testObj := testCryptStruct{
-		NoCrypt: "Hello",
+		NoCrypt:     "Hello",
 		CryptString: "World",
-		CryptNum: 1337,
+		CryptNum:    1337,
 		CryptoStruct: testSubStruct{
 			TestString: "Franklyn",
-			TestNum: 1448,
+			TestNum:    1448,
 		},
 	}
 
@@ -76,7 +76,6 @@ type testCrossSDKStruct struct {
 	Message string `cbcrypt:"aes256,mypublickey,myhmackey" json:"message"`
 }
 
-
 func TestInterSDKAES(t *testing.T) {
 	testDoc := testCrossSDKStruct{
 		Message: "The old grey goose jumped over the wrickety gate.",
@@ -84,11 +83,11 @@ func TestInterSDKAES(t *testing.T) {
 
 	testEncDoc := map[string]interface{}{
 		"__crypt_message": cipherData{
-			Algorithm: "AES-256-HMAC-SHA256",
-			KeyId: "mypublickey",
-			Iv: "Cfq84/46Qjet3EEQ1HUwSg==",
+			Algorithm:  "AES-256-HMAC-SHA256",
+			KeyId:      "mypublickey",
+			Iv:         "Cfq84/46Qjet3EEQ1HUwSg==",
 			Ciphertext: "sR6AFEIGWS5Fy9QObNOhbCgfg3vXH4NHVRK1qkhKLQqjkByg2n69lot89qFEJuBsVNTXR77PZR6RjN4h4M9evg==",
-			Signature: "rT89aCj1WosYjWHHu0mf92S195vYnEGA/reDnYelQsM=",
+			Signature:  "rT89aCj1WosYjWHHu0mf92S195vYnEGA/reDnYelQsM=",
 		},
 	}
 
@@ -100,7 +99,7 @@ func TestInterSDKAES(t *testing.T) {
 	keyStore := &InsecureKeystore{
 		Keys: map[string][]byte{
 			"mypublickey": []byte("!mysecretkey#9^5usdk39d&dlf)03sL"),
-			"myhmackey": []byte("myauthpassword"),
+			"myhmackey":   []byte("myauthpassword"),
 		},
 	}
 

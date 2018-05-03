@@ -7,7 +7,7 @@ import (
 
 type Transcoder struct {
 	BaseTranscoder gocb.Transcoder
-	KeyStore KeyProvider
+	KeyStore       KeyProvider
 }
 
 // Decodes retrieved bytes into a Go type.
