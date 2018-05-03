@@ -17,7 +17,15 @@ func (t *Transcoder) Decode(data []byte, flags uint32, valuePtr interface{}) err
 		transcoder = gocb.DefaultTranscoder{}
 	}
 
-	decData, err := DecryptJsonStruct(data, reflect.TypeOf(valuePtr), t.KeyStore)
+	valueType := reflect.TypeOf(valuePtr)
+	for valueType.Kind() == reflect.Ptr {
+		valueType = valueType.Elem()
+	}
+	if valueType.Kind() != reflect.Struct {
+		return transcoder.Decode(data, flags, valuePtr)
+	}
+
+	decData, err := DecryptJsonStruct(data, valueType, t.KeyStore)
 	if err != nil {
 		return err
 	}
@@ -37,7 +45,15 @@ func (t *Transcoder) Encode(value interface{}) ([]byte, uint32, error) {
 		return nil, 0, err
 	}
 
-	encData, err := EncryptJsonStruct(data, reflect.TypeOf(value), t.KeyStore)
+	valueType := reflect.TypeOf(value)
+	for valueType.Kind() == reflect.Ptr {
+		valueType = valueType.Elem()
+	}
+	if valueType.Kind() != reflect.Struct {
+		return data, flags, err
+	}
+
+	encData, err := EncryptJsonStruct(data, valueType, t.KeyStore)
 	if err != nil {
 		return nil, 0, err
 	}
