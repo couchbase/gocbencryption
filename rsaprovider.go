@@ -33,7 +33,7 @@ func (cp *RsaCryptoProvider) Encrypt(data []byte) ([]byte, error) {
 
 	encBlock := cipherData{
 		KeyId:      cp.PublicKey,
-		Algorithm:  "rsa2048oep",
+		Algorithm:  "RSA-2048-OEP",
 		Ciphertext: base64.StdEncoding.EncodeToString(ciphertext),
 	}
 
@@ -71,7 +71,7 @@ func (cp *RsaCryptoProvider) Decrypt(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	if encBlock.Algorithm != "rsa2048oep" {
+	if encBlock.Algorithm != "RSA-2048-OEP" {
 		return nil, errors.New("encryption algorithm did not match configured algorithm")
 	}
 
