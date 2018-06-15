@@ -10,8 +10,9 @@ package gocbfieldcrypt
 import (
 	"crypto/rsa"
 	"encoding/asn1"
-	"errors"
 	"math/big"
+
+	"github.com/pkg/errors"
 )
 
 type pkcs1PrivateKey struct {

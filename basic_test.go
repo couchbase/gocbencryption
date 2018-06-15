@@ -125,3 +125,101 @@ func TestInterSDKAES(t *testing.T) {
 		t.Fatalf("Decrypted document did not match original")
 	}
 }
+
+func TestInvalidProvider(t *testing.T) {
+	invalidCryptStruct := struct {
+		CryptString string `cbcrypt:"thisdoesntexist"`
+	}{
+		"something",
+	}
+
+	bytes, err := json.Marshal(invalidCryptStruct)
+	if err != nil {
+		t.Fatalf("Failed to marshal: %s", err)
+	}
+
+	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), &InsecureKeystore{})
+	if err == nil || !IsCryptoErrorType(err, CryptoProviderNotFound) {
+		t.Fatalf("Expected invalid provider error, was: %s", err)
+	}
+}
+
+func TestMissingPublicKey(t *testing.T) {
+	invalidCryptStruct := struct {
+		CryptString string `cbcrypt:"aes256"`
+	}{
+		"something",
+	}
+
+	bytes, err := json.Marshal(invalidCryptStruct)
+	if err != nil {
+		t.Fatalf("Failed to marshal: %s", err)
+	}
+
+	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), &InsecureKeystore{})
+	if err == nil || !IsCryptoErrorType(err, CryptoProviderMissingPublicKey) {
+		t.Fatalf("Expected missing public key error, was: %s", err)
+	}
+}
+
+func TestMissingPrivateKey(t *testing.T) {
+	invalidCryptStruct := struct {
+		CryptString string `cbcrypt:"aes256,publickey"`
+	}{
+		"something",
+	}
+
+	bytes, err := json.Marshal(invalidCryptStruct)
+	if err != nil {
+		t.Fatalf("Failed to marshal: %s", err)
+	}
+
+	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), &InsecureKeystore{})
+	if !IsCryptoErrorType(err, CryptoProviderMissingPrivateKey) {
+		t.Fatalf("Expected missing private key error, was: %s", err)
+	}
+}
+
+func TestMissingSigningKey(t *testing.T) {
+	invalidCryptStruct := struct {
+		CryptString string `cbcrypt:"rsa2048,publickey"`
+	}{
+		"something",
+	}
+
+	bytes, err := json.Marshal(invalidCryptStruct)
+	if err != nil {
+		t.Fatalf("Failed to marshal: %s", err)
+	}
+
+	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), &InsecureKeystore{})
+	if err == nil || !IsCryptoErrorType(err, CryptoProviderMissingSigningKey) {
+		t.Fatalf("Expected missing signing key error, was: %s", err)
+	}
+}
+
+func TestKeySizeError(t *testing.T) {
+	testKey, _ := hex.DecodeString("12345678901234561234567890123456123456789012345612345678901234561234")
+	keyStore := &InsecureKeystore{
+		Keys: map[string][]byte{
+			"somekey": testKey,
+			"hmackey": testKey,
+		},
+	}
+
+	invalidCryptStruct := struct {
+		CryptString string `cbcrypt:"aes256,somekey,hmackey"`
+	}{
+		"something",
+	}
+
+	bytes, err := json.Marshal(invalidCryptStruct)
+	if err != nil {
+		t.Fatalf("Failed to marshal: %s", err)
+	}
+
+	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), keyStore)
+	if err == nil || !IsCryptoErrorType(err, CryptoProviderKeySize) {
+		t.Fatalf("Expected key size error, was: %v", err)
+	}
+}

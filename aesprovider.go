@@ -15,11 +15,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
+
+	"github.com/pkg/errors"
 )
 
 type AesCryptoProvider struct {
+	Alias    string
 	KeyStore KeyProvider
 	Key      string
 	HmacKey  string
@@ -32,7 +34,10 @@ func (cp *AesCryptoProvider) getAlgNameFromKey(key, hmacKey []byte) (string, err
 	case 32:
 		return "AES-256-HMAC-SHA256", nil
 	default:
-		return "", fmt.Errorf("invalid cipher key size (must be 32 bytes, was %d).", len(key))
+		return "", newCryptoError(
+			CryptoProviderKeySize,
+			fmt.Sprintf("the key found does not match the size of the key that the algorithm expects for the alias:"+
+				" %s. Expected key size was %d and configured key is %d", cp.Alias, 32, len(key)))
 	}
 }
 
@@ -134,7 +139,7 @@ func (cp *AesCryptoProvider) Decrypt(data []byte) ([]byte, error) {
 	}
 
 	if encBlock.Algorithm != algName {
-		return nil, errors.New("encryption algorithm did not match configured algorithm.")
+		return nil, errors.New("encryption algorithm did not match configured algorithm")
 	}
 
 	var sigBytes []byte
@@ -153,7 +158,10 @@ func (cp *AesCryptoProvider) Decrypt(data []byte) ([]byte, error) {
 	}
 
 	if !hmac.Equal(sig, srcSig) {
-		return nil, errors.New("encrypted data was tampered")
+		return nil, newCryptoError(
+			CryptoProviderSigningFailed,
+			fmt.Sprintf("The authentication failed while checking the signature of the message payload for the alias: %s", cp.Alias),
+		)
 	}
 
 	encData, err := base64.StdEncoding.DecodeString(encBlock.Ciphertext)
