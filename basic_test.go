@@ -23,9 +23,9 @@ type testSubStruct struct {
 
 type testCryptStruct struct {
 	NoCrypt      string
-	CryptString  string        `cbcrypt:"aes256,somekey,hmackey"`
-	CryptNum     int           `cbcrypt:"aes256,somekey,hmackey"`
-	CryptoStruct testSubStruct `cbcrypt:"rsa2048,rsapubkey,rsaprivkey"`
+	CryptString  string        `cbcrypt:"myAESProvider"`
+	CryptNum     int           `cbcrypt:"myAESProvider"`
+	CryptoStruct testSubStruct `cbcrypt:"myRSAProvider"`
 }
 
 func TestJsonStruct(t *testing.T) {
@@ -43,6 +43,20 @@ func TestJsonStruct(t *testing.T) {
 		},
 	}
 
+	aesProvider := &AesCryptoProvider{
+		Alias:    "myAESProvider",
+		KeyStore: keyStore,
+		Key:      "somekey",
+		HmacKey:  "hmackey",
+	}
+
+	rsaProvider := &RsaCryptoProvider{
+		Alias:      "myRSAProvider",
+		KeyStore:   keyStore,
+		PublicKey:  "rsapubkey",
+		PrivateKey: "rsaprivkey",
+	}
+
 	testObj := testCryptStruct{
 		NoCrypt:     "Hello",
 		CryptString: "World",
@@ -58,12 +72,16 @@ func TestJsonStruct(t *testing.T) {
 		t.Fatalf("Failed to marshal: %s", err)
 	}
 
-	encBytes, err := EncryptJsonStruct(bytes, reflect.TypeOf(testObj), keyStore)
+	providers := make(map[string]CryptoProvider)
+	providers["myAESProvider"] = aesProvider
+	providers["myRSAProvider"] = rsaProvider
+
+	encBytes, err := EncryptJsonStruct(bytes, reflect.TypeOf(testObj), providers)
 	if err != nil {
 		t.Fatalf("Failed to encrypt: %s", err)
 	}
 
-	decBytes, err := DecryptJsonStruct(encBytes, reflect.TypeOf(testObj), keyStore)
+	decBytes, err := DecryptJsonStruct(encBytes, reflect.TypeOf(testObj), providers)
 	if err != nil {
 		t.Fatalf("Failed to decrypt: %s", err)
 	}
@@ -80,7 +98,7 @@ func TestJsonStruct(t *testing.T) {
 }
 
 type testCrossSDKStruct struct {
-	Message string `cbcrypt:"aes256,mypublickey,myhmackey" json:"message"`
+	Message string `cbcrypt:"myAESProvider" json:"message"`
 }
 
 func TestInterSDKAES(t *testing.T) {
@@ -110,7 +128,17 @@ func TestInterSDKAES(t *testing.T) {
 		},
 	}
 
-	decData, err := DecryptJsonStruct(encDataBytes, reflect.TypeOf(testDoc), keyStore)
+	aesProvider := &AesCryptoProvider{
+		Alias:    "myAESProvider",
+		KeyStore: keyStore,
+		Key:      "mypublickey",
+		HmacKey:  "myhmackey",
+	}
+
+	providers := make(map[string]CryptoProvider)
+	providers["myAESProvider"] = aesProvider
+
+	decData, err := DecryptJsonStruct(encDataBytes, reflect.TypeOf(testDoc), providers)
 	if err != nil {
 		t.Fatalf("Failed to decrypt test data: %s", err)
 	}
@@ -138,7 +166,9 @@ func TestInvalidProvider(t *testing.T) {
 		t.Fatalf("Failed to marshal: %s", err)
 	}
 
-	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), &InsecureKeystore{})
+	providers := make(map[string]CryptoProvider)
+
+	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), providers)
 	if err == nil || !IsCryptoErrorType(err, CryptoProviderNotFound) {
 		t.Fatalf("Expected invalid provider error, was: %s", err)
 	}
@@ -156,7 +186,24 @@ func TestMissingPublicKey(t *testing.T) {
 		t.Fatalf("Failed to marshal: %s", err)
 	}
 
-	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), &InsecureKeystore{})
+	testKey, _ := hex.DecodeString("1234567890123456123456789012345612345678901234561234567890123456")
+	keyStore := &InsecureKeystore{
+		Keys: map[string][]byte{
+			"publickey": testKey,
+			"hmackey":   testKey,
+		},
+	}
+
+	aesProvider := &AesCryptoProvider{
+		Alias:    "myAESProvider",
+		KeyStore: keyStore,
+		HmacKey:  "hmackey",
+	}
+
+	providers := make(map[string]CryptoProvider)
+	providers["aes256"] = aesProvider
+
+	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), providers)
 	if err == nil || !IsCryptoErrorType(err, CryptoProviderMissingPublicKey) {
 		t.Fatalf("Expected missing public key error, was: %s", err)
 	}
@@ -174,7 +221,24 @@ func TestMissingPrivateKey(t *testing.T) {
 		t.Fatalf("Failed to marshal: %s", err)
 	}
 
-	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), &InsecureKeystore{})
+	testKey, _ := hex.DecodeString("1234567890123456123456789012345612345678901234561234567890123456")
+	keyStore := &InsecureKeystore{
+		Keys: map[string][]byte{
+			"publickey": testKey,
+			"hmackey":   testKey,
+		},
+	}
+
+	aesProvider := &AesCryptoProvider{
+		Alias:    "myAESProvider",
+		KeyStore: keyStore,
+		Key:      "publickey",
+	}
+
+	providers := make(map[string]CryptoProvider)
+	providers["aes256"] = aesProvider
+
+	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), providers)
 	if !IsCryptoErrorType(err, CryptoProviderMissingPrivateKey) {
 		t.Fatalf("Expected missing private key error, was: %s", err)
 	}
@@ -182,7 +246,7 @@ func TestMissingPrivateKey(t *testing.T) {
 
 func TestMissingSigningKey(t *testing.T) {
 	invalidCryptStruct := struct {
-		CryptString string `cbcrypt:"rsa2048,publickey"`
+		CryptString string `cbcrypt:"rsa2048"`
 	}{
 		"something",
 	}
@@ -192,23 +256,34 @@ func TestMissingSigningKey(t *testing.T) {
 		t.Fatalf("Failed to marshal: %s", err)
 	}
 
-	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), &InsecureKeystore{})
+	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	rsaPrivateKey := marshalPKCS1PrivateKey(rsaKey)
+	rsaPublicKey := marshalPKCS1PublicKey(&rsaKey.PublicKey)
+	keyStore := &InsecureKeystore{
+		Keys: map[string][]byte{
+			"publickey":  rsaPublicKey,
+			"signingkey": rsaPrivateKey,
+		},
+	}
+
+	rsaProvider := &RsaCryptoProvider{
+		Alias:     "myRSAProvider",
+		KeyStore:  keyStore,
+		PublicKey: "publickey",
+	}
+
+	providers := make(map[string]CryptoProvider)
+	providers["rsa2048"] = rsaProvider
+
+	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), providers)
 	if err == nil || !IsCryptoErrorType(err, CryptoProviderMissingSigningKey) {
 		t.Fatalf("Expected missing signing key error, was: %s", err)
 	}
 }
 
 func TestKeySizeError(t *testing.T) {
-	testKey, _ := hex.DecodeString("12345678901234561234567890123456123456789012345612345678901234561234")
-	keyStore := &InsecureKeystore{
-		Keys: map[string][]byte{
-			"somekey": testKey,
-			"hmackey": testKey,
-		},
-	}
-
 	invalidCryptStruct := struct {
-		CryptString string `cbcrypt:"aes256,somekey,hmackey"`
+		CryptString string `cbcrypt:"aes256"`
 	}{
 		"something",
 	}
@@ -218,8 +293,85 @@ func TestKeySizeError(t *testing.T) {
 		t.Fatalf("Failed to marshal: %s", err)
 	}
 
-	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), keyStore)
+	testKey, _ := hex.DecodeString("12345678901234561234567890123456123456789012345612345678901234561234")
+	keyStore := &InsecureKeystore{
+		Keys: map[string][]byte{
+			"publickey": testKey,
+			"hmackey":   testKey,
+		},
+	}
+
+	aesProvider := &AesCryptoProvider{
+		Alias:    "myAESProvider",
+		KeyStore: keyStore,
+		Key:      "publickey",
+		HmacKey:  "hmackey",
+	}
+
+	providers := make(map[string]CryptoProvider)
+	providers["aes256"] = aesProvider
+
+	_, err = EncryptJsonStruct(bytes, reflect.TypeOf(invalidCryptStruct), providers)
 	if err == nil || !IsCryptoErrorType(err, CryptoProviderKeySize) {
 		t.Fatalf("Expected key size error, was: %v", err)
+	}
+}
+
+func TestJsonTranscode(t *testing.T) {
+	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	rsaPrivateKey := marshalPKCS1PrivateKey(rsaKey)
+	rsaPublicKey := marshalPKCS1PublicKey(&rsaKey.PublicKey)
+
+	testKey, _ := hex.DecodeString("1234567890123456123456789012345612345678901234561234567890123456")
+	keyStore := &InsecureKeystore{
+		Keys: map[string][]byte{
+			"somekey":    testKey,
+			"hmackey":    testKey,
+			"rsaprivkey": rsaPrivateKey,
+			"rsapubkey":  rsaPublicKey,
+		},
+	}
+
+	aesProvider := &AesCryptoProvider{
+		Alias:    "myAESProvider",
+		KeyStore: keyStore,
+		Key:      "somekey",
+		HmacKey:  "hmackey",
+	}
+
+	rsaProvider := &RsaCryptoProvider{
+		Alias:      "myRSAProvider",
+		KeyStore:   keyStore,
+		PublicKey:  "rsapubkey",
+		PrivateKey: "rsaprivkey",
+	}
+
+	testObj := testCryptStruct{
+		NoCrypt:     "Hello",
+		CryptString: "World",
+		CryptNum:    1337,
+		CryptoStruct: testSubStruct{
+			TestString: "Franklyn",
+			TestNum:    1448,
+		},
+	}
+
+	coder := Transcoder{}
+	coder.Register("myAESProvider", aesProvider)
+	coder.Register("myRSAProvider", rsaProvider)
+
+	encBytes, flags, err := coder.Encode(testObj)
+	if err != nil {
+		t.Fatalf("Failed to encode: %s", err)
+	}
+
+	decoded := testCryptStruct{}
+	err = coder.Decode(encBytes, flags, &decoded)
+	if err != nil {
+		t.Fatalf("Failed to decode: %s", err)
+	}
+
+	if !reflect.DeepEqual(testObj, decoded) {
+		t.Fatalf("Decoded document did not match original")
 	}
 }

@@ -79,11 +79,11 @@ func cachedTypeFields(t reflect.Type) map[string]field {
 	return f
 }
 
-func typeProviders(t reflect.Type, keys KeyProvider) (map[string]CryptoProvider, error) {
+func typeProviders(t reflect.Type, providers map[string]CryptoProvider) (map[string]CryptoProvider, error) {
 	out := make(map[string]CryptoProvider)
 	fields := cachedTypeFields(t)
 	for fname, f := range fields {
-		provider, err := providerFromField(f, keys)
+		provider, err := providerFromField(f, providers)
 		if err != nil {
 			return nil, err
 		}

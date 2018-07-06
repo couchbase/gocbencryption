@@ -8,17 +8,36 @@
 package gocbfieldcrypt
 
 import (
-	"gopkg.in/couchbase/gocb.v1"
 	"reflect"
+
+	"gopkg.in/couchbase/gocb.v1"
 )
 
 type Transcoder struct {
 	BaseTranscoder gocb.Transcoder
-	KeyStore       KeyProvider
+	providers      map[string]CryptoProvider
+}
+
+// NewTranscoder creates a new initialized Transcoder.
+func NewTranscoder() *Transcoder {
+	return &Transcoder{
+		providers: make(map[string]CryptoProvider),
+	}
+}
+
+// Register registers a CryptoProvider with the transcoder.
+func (t *Transcoder) Register(name string, provider CryptoProvider) {
+	if t.providers == nil {
+		t.providers = make(map[string]CryptoProvider)
+	}
+	t.providers[name] = provider
 }
 
 // Decodes retrieved bytes into a Go type.
 func (t *Transcoder) Decode(data []byte, flags uint32, valuePtr interface{}) error {
+	if t.providers == nil {
+		t.providers = make(map[string]CryptoProvider)
+	}
 	transcoder := t.BaseTranscoder
 	if transcoder == nil {
 		transcoder = gocb.DefaultTranscoder{}
@@ -32,7 +51,7 @@ func (t *Transcoder) Decode(data []byte, flags uint32, valuePtr interface{}) err
 		return transcoder.Decode(data, flags, valuePtr)
 	}
 
-	decData, err := DecryptJsonStruct(data, valueType, t.KeyStore)
+	decData, err := DecryptJsonStruct(data, valueType, t.providers)
 	if err != nil {
 		return err
 	}
@@ -42,6 +61,9 @@ func (t *Transcoder) Decode(data []byte, flags uint32, valuePtr interface{}) err
 
 // Encodes a Go type into bytes for storage.
 func (t *Transcoder) Encode(value interface{}) ([]byte, uint32, error) {
+	if t.providers == nil {
+		t.providers = make(map[string]CryptoProvider)
+	}
 	transcoder := t.BaseTranscoder
 	if transcoder == nil {
 		transcoder = gocb.DefaultTranscoder{}
@@ -60,7 +82,7 @@ func (t *Transcoder) Encode(value interface{}) ([]byte, uint32, error) {
 		return data, flags, err
 	}
 
-	encData, err := EncryptJsonStruct(data, valueType, t.KeyStore)
+	encData, err := EncryptJsonStruct(data, valueType, t.providers)
 	if err != nil {
 		return nil, 0, err
 	}

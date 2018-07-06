@@ -9,10 +9,9 @@ package gocbfieldcrypt
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
-
-	"github.com/pkg/errors"
 )
 
 type KeyProvider interface {
@@ -48,49 +47,10 @@ type FieldDefinition struct {
 	KeyId     string
 }
 
-func providerFromField(f field, keys KeyProvider) (CryptoProvider, error) {
-	switch f.algorithm {
-	case "aes256":
-		fallthrough
-	case "AES-256-HMAC-SHA256":
-		if len(f.options) == 0 {
-			return nil, newCryptoError(
-				CryptoProviderMissingPublicKey,
-				fmt.Sprintf("cryptographic providers require a non-nil, empty public and key identifier (kid) be configured for the alias: %s", f.algorithm),
-			)
-		} else if len(f.options) == 1 {
-			return nil, newCryptoError(
-				CryptoProviderMissingPrivateKey,
-				fmt.Sprintf("symmetric key cryptographic providers require a non-nil, empty private key be configured for the alias: %s", f.algorithm),
-			)
-		}
-
-		return &AesCryptoProvider{
-			Alias:    f.algorithm,
-			KeyStore: keys,
-			Key:      f.options[0],
-			HmacKey:  f.options[1],
-		}, nil
-	case "rsa2048":
-		fallthrough
-	case "RSA-2048-OEP":
-		if len(f.options) == 0 {
-			return nil, newCryptoError(
-				CryptoProviderMissingPublicKey,
-				fmt.Sprintf("cryptographic providers require a non-nil, empty public and key identifier (kid) be configured for the alias: %s", f.algorithm),
-			)
-		} else if len(f.options) == 1 {
-			return nil, newCryptoError(
-				CryptoProviderMissingSigningKey,
-				fmt.Sprintf("asymmetric key cryptographic providers require a non-nil, empty signing key be configured for the alias: %s", f.algorithm),
-			)
-		}
-
-		return &RsaCryptoProvider{
-			KeyStore:   keys,
-			PublicKey:  f.options[0],
-			PrivateKey: f.options[1],
-		}, nil
+func providerFromField(f field, providers map[string]CryptoProvider) (CryptoProvider, error) {
+	provider, ok := providers[f.algorithm]
+	if ok {
+		return provider, nil
 	}
 
 	return nil, newCryptoError(
@@ -99,22 +59,22 @@ func providerFromField(f field, keys KeyProvider) (CryptoProvider, error) {
 	)
 }
 
-func EncryptJsonStruct(bytes []byte, t reflect.Type, keys KeyProvider) ([]byte, error) {
-	providers, err := typeProviders(t, keys)
+func EncryptJsonStruct(bytes []byte, t reflect.Type, providers map[string]CryptoProvider) ([]byte, error) {
+	fieldProviders, err := typeProviders(t, providers)
 	if err != nil {
 		return nil, err
 	}
 
-	return EncryptJsonFields(bytes, providers)
+	return EncryptJsonFields(bytes, fieldProviders)
 }
 
-func DecryptJsonStruct(bytes []byte, t reflect.Type, keys KeyProvider) ([]byte, error) {
-	providers, err := typeProviders(t, keys)
+func DecryptJsonStruct(bytes []byte, t reflect.Type, providers map[string]CryptoProvider) ([]byte, error) {
+	fieldProviders, err := typeProviders(t, providers)
 	if err != nil {
 		return nil, err
 	}
 
-	return DecryptJsonFields(bytes, providers)
+	return DecryptJsonFields(bytes, fieldProviders)
 }
 
 func EncryptJsonFields(bytes []byte, fields map[string]CryptoProvider) ([]byte, error) {
@@ -129,7 +89,7 @@ func EncryptJsonFields(bytes []byte, fields map[string]CryptoProvider) ([]byte, 
 		if val, ok := doc[field]; ok {
 			encData, err := crypt.Encrypt(val)
 			if err != nil {
-				return nil, errors.Wrap(err, "the encryption of the field failed")
+				return nil, err
 			}
 
 			doc["__crypt_"+field] = encData
@@ -157,7 +117,7 @@ func DecryptJsonFields(bytes []byte, fields map[string]CryptoProvider) ([]byte, 
 		if val, ok := doc["__crypt_"+field]; ok {
 			encData, err := crypt.Decrypt(val)
 			if err != nil {
-				return nil, errors.Wrap(err, "the decryption of the field failed")
+				return nil, err
 			}
 
 			doc[field] = encData

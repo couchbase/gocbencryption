@@ -13,17 +13,32 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 
 	"github.com/pkg/errors"
 )
 
 type RsaCryptoProvider struct {
+	Alias      string
 	KeyStore   KeyProvider
 	PublicKey  string
 	PrivateKey string
 }
 
 func (cp *RsaCryptoProvider) Encrypt(data []byte) ([]byte, error) {
+	if cp.PublicKey == "" {
+		return nil, newCryptoError(
+			CryptoProviderMissingPublicKey,
+			fmt.Sprintf("cryptographic providers require a non-nil, empty public and key identifier (kid) be configured for the alias: %s", cp.Alias),
+		)
+	}
+	if cp.PrivateKey == "" {
+		return nil, newCryptoError(
+			CryptoProviderMissingSigningKey,
+			fmt.Sprintf("asymmetric key cryptographic providers require a non-nil, empty signing key be configured for the alias: %s", cp.Alias),
+		)
+	}
+
 	pubKeyBytes, err := cp.KeyStore.GetKey(cp.PublicKey)
 	if err != nil {
 		return nil, err
@@ -54,6 +69,19 @@ func (cp *RsaCryptoProvider) Encrypt(data []byte) ([]byte, error) {
 }
 
 func (cp *RsaCryptoProvider) Decrypt(data []byte) ([]byte, error) {
+	if cp.PublicKey == "" {
+		return nil, newCryptoError(
+			CryptoProviderMissingPublicKey,
+			fmt.Sprintf("cryptographic providers require a non-nil, empty public and key identifier (kid) be configured for the alias: %s", cp.Alias),
+		)
+	}
+	if cp.PrivateKey == "" {
+		return nil, newCryptoError(
+			CryptoProviderMissingSigningKey,
+			fmt.Sprintf("asymmetric key cryptographic providers require a non-nil, empty signing key be configured for the alias: %s", cp.Alias),
+		)
+	}
+
 	var encBlock cipherData
 	err := json.Unmarshal(data, &encBlock)
 	if err != nil {

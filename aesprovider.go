@@ -42,6 +42,19 @@ func (cp *AesCryptoProvider) getAlgNameFromKey(key, hmacKey []byte) (string, err
 }
 
 func (cp *AesCryptoProvider) Encrypt(data []byte) ([]byte, error) {
+	if cp.Key == "" {
+		return nil, newCryptoError(
+			CryptoProviderMissingPublicKey,
+			fmt.Sprintf("cryptographic providers require a non-nil, empty public and key identifier (kid) be configured for the alias: %s", cp.Alias),
+		)
+	}
+	if cp.HmacKey == "" {
+		return nil, newCryptoError(
+			CryptoProviderMissingPrivateKey,
+			fmt.Sprintf("cryptographic providers require a non-nil, empty private be configured for the alias: %s", cp.Alias),
+		)
+	}
+
 	key, err := cp.KeyStore.GetKey(cp.Key)
 	if err != nil {
 		return nil, err
@@ -110,6 +123,19 @@ func (cp *AesCryptoProvider) Encrypt(data []byte) ([]byte, error) {
 }
 
 func (cp *AesCryptoProvider) Decrypt(data []byte) ([]byte, error) {
+	if cp.Key == "" {
+		return nil, newCryptoError(
+			CryptoProviderMissingPublicKey,
+			fmt.Sprintf("cryptographic providers require a non-nil, empty public and key identifier (kid) be configured for the alias: %s", cp.Alias),
+		)
+	}
+	if cp.HmacKey == "" {
+		return nil, newCryptoError(
+			CryptoProviderMissingPrivateKey,
+			fmt.Sprintf("cryptographic providers require a non-nil, empty private be configured for the alias: %s", cp.Alias),
+		)
+	}
+
 	key, err := cp.KeyStore.GetKey(cp.Key)
 	if err != nil {
 		return nil, err
