@@ -44,9 +44,12 @@ func (cp *RsaCryptoProvider) Encrypt(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	pubKey, err := parsePKCS1PublicKey(pubKeyBytes)
+	pubKey, err := parsePKCS1PublicKeyPem(pubKeyBytes)
 	if err != nil {
-		return nil, err
+		pubKey, err = parsePKCS1PublicKey(pubKeyBytes)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	ciphertext, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, pubKey, data, nil)
@@ -102,9 +105,12 @@ func (cp *RsaCryptoProvider) Decrypt(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	privKey, err := parsePKCS1PrivateKey(privKeyBytes)
+	privKey, err := parsePKCS1PrivateKeyPem(privKeyBytes)
 	if err != nil {
-		return nil, err
+		privKey, err = parsePKCS1PrivateKey(privKeyBytes)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if encBlock.Algorithm != "RSA-2048-OEP" {
