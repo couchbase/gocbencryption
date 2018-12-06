@@ -24,16 +24,50 @@ var fieldCache struct {
 	mu    sync.Mutex   // used only by writers
 }
 
-func typeFields(t reflect.Type) map[string]field {
-	fields := make(map[string]field)
+var fields map[string]field
+
+//Converts the passed reflect type to a slice or map before passing back to the handleTypeRedirect as a struct
+func checkMapOrSliceForEncryption(t reflect.Type, p string) {
+
+	//Get the actual object of the slice or map from the pointer
+	ov := t.Elem()
+
+	//Re-check it
+	handleTypeRediret(ov, p)
+}
+
+//Send the relfect type to the proper handler
+func handleTypeRediret(t reflect.Type, p string) {
+
+	switch t.Kind() {
+	case reflect.Struct:
+		typeFields(t, p)
+	case reflect.Slice:
+		checkMapOrSliceForEncryption(t, p)
+	case reflect.Map:
+		checkMapOrSliceForEncryption(t, p)
+	}
+}
+
+//Loops through the top level struct looking for any crypt tagged elements
+//Hands off any second level structs and non-structs to a handler method to pre-process the non-structs
+func typeFields(t reflect.Type, p string) map[string]field {
+	if len(fields) == 0 {
+		fields = make(map[string]field)
+	}
+
+	//Keep track of whether to use the f.Name as a parent path
+	//f.Name should not be used as a parent path if a json tag is not setup as the non-json name will not exist in the doc path during encryption and decryption
+	var useFieldNameAsParent bool
+
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
+
 		tag := f.Tag.Get("cbcrypt")
-		if tag == "" || tag == "-" {
-			continue
-		}
 
 		fieldName := f.Name
+		useFieldNameAsParent = false
+
 		jsonTag := f.Tag.Get("json")
 		if jsonTag == "-" {
 			continue
@@ -41,6 +75,28 @@ func typeFields(t reflect.Type) map[string]field {
 		if jsonTag != "" {
 			jsonOpts := strings.Split(jsonTag, ",")
 			fieldName = jsonOpts[0]
+
+			//Add the parent path if one is provided
+
+			if p != "" {
+				fieldName = p + "." + fieldName
+			}
+
+			useFieldNameAsParent = true
+
+		}
+
+		if tag == "" || tag == "-" {
+
+			//If this is a struct without a crypt tag check to see if any of its elements are encrypted
+			if fieldName != "" {
+				if !useFieldNameAsParent {
+					fieldName = ""
+				}
+				handleTypeRediret(f.Type, fieldName)
+			}
+
+			continue
 		}
 
 		options := strings.Split(tag, ",")
@@ -62,7 +118,7 @@ func cachedTypeFields(t reflect.Type) map[string]field {
 
 	// Compute fields without lock.
 	// Might duplicate effort but won't hold other computations back.
-	f = typeFields(t)
+	f = typeFields(t, "")
 	if f == nil {
 		f = map[string]field{}
 	}
