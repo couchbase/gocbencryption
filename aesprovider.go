@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Couchbase, Inc.
+ * Copyright (c) 2020 Couchbase, Inc.
  *
  * Use of this software is subject to the Couchbase Inc. Enterprise Subscription License Agreement
  * which may be found at https://www.couchbase.com/ESLA-11132015.
@@ -12,205 +12,181 @@ import (
 	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-
-	"github.com/pkg/errors"
+	"crypto/sha512"
+	"encoding/binary"
 )
 
-type AesCryptoProvider struct {
-	Alias    string
-	KeyStore KeyProvider
-	Key      string
-	HmacKey  string
+type AeadAes256CbcHmacSha512Provider struct {
+	keyStore Keyring
+	keyID    string
+	iv       []byte
 }
 
-func (cp *AesCryptoProvider) getAlgNameFromKey(key, hmacKey []byte) (string, error) {
-	switch len(key) {
-	case 16:
-		return "AES-128-HMAC-SHA256", nil
-	case 32:
-		return "AES-256-HMAC-SHA256", nil
-	default:
-		return "", newCryptoError(
-			CryptoProviderKeySize,
-			fmt.Sprintf("the key found does not match the size of the key that the algorithm expects for the alias:"+
-				" %s. Expected key size was %d and configured key is %d", cp.Alias, 32, len(key)))
+func NewAeadAes256CbcHmacSha512Provider(keyring Keyring, keyID string) *AeadAes256CbcHmacSha512Provider {
+	return &AeadAes256CbcHmacSha512Provider{
+		keyStore: keyring,
+		keyID:    keyID,
 	}
 }
 
-func (cp *AesCryptoProvider) Encrypt(data []byte) ([]byte, error) {
-	if cp.Key == "" {
-		return nil, newCryptoError(
-			CryptoProviderMissingPublicKey,
-			fmt.Sprintf("cryptographic providers require a non-nil, empty public and key identifier (kid) be configured for the alias: %s", cp.Alias),
-		)
-	}
-	if cp.HmacKey == "" {
-		return nil, newCryptoError(
-			CryptoProviderMissingPrivateKey,
-			fmt.Sprintf("cryptographic providers require a non-nil, empty private be configured for the alias: %s", cp.Alias),
-		)
+func (p *AeadAes256CbcHmacSha512Provider) Algorithm() string {
+	return "AEAD_AES_256_CBC_HMAC_SHA512"
+}
+
+func (p *AeadAes256CbcHmacSha512Provider) Encrypt(plaintext []byte) (*EncryptionResult, error) {
+	key, err := p.keyStore.Get(p.keyID)
+	if err != nil {
+		return nil, wrapError(err, "failed to get key from store")
 	}
 
-	key, err := cp.KeyStore.GetKey(cp.Key)
+	b, err := p.encrypt(key.Bytes, plaintext, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	hmacKey := key
-	if cp.HmacKey != "" {
-		hmacKey, err = cp.KeyStore.GetKey(cp.HmacKey)
+	e := NewEncryptionResultFromAlgo(p.Algorithm())
+	e.Put("kid", key.ID)
+	e.PutAndBase64Encode("ciphertext", b)
+
+	return e, nil
+}
+
+func (p *AeadAes256CbcHmacSha512Provider) encrypt(key, plaintext, associatedData []byte) ([]byte, error) {
+	err := p.verifyKeyLength(key)
+	if err != nil {
+		return nil, wrapError(err, "invalid key length")
+	}
+
+	aesKey := key[32:]
+	hmacKey := key[:32]
+
+	iv := p.iv
+	if len(iv) == 0 {
+		iv = make([]byte, 16)
+		_, err := rand.Read(iv)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	algName, err := cp.getAlgNameFromKey(key, hmacKey)
-	if err != nil {
-		return nil, err
-	}
-
-	iv := make([]byte, 16)
-	_, err = rand.Read(iv)
-	if err != nil {
-		return nil, err
-	}
-
-	block, err := aes.NewCipher(key)
+	block, err := aes.NewCipher(aesKey)
 	if err != nil {
 		return nil, err
 	}
 
 	cbc := cipher.NewCBCEncrypter(block, iv)
 
-	data = pkcs5Padding(data, block.BlockSize())
+	// pkcs5 is identical to pkcs7 in this usage.
+	plaintext = pkcs5Padding(plaintext, block.BlockSize())
 
-	encData := make([]byte, len(data))
-	cbc.CryptBlocks(encData, data)
+	encData := make([]byte, len(plaintext))
+	cbc.CryptBlocks(encData, plaintext)
 
-	codedIv := base64.StdEncoding.EncodeToString(iv)
-	codedCiphertext := base64.StdEncoding.EncodeToString(encData)
+	aesCipher := append(iv, encData...)
 
-	var sigBytes []byte
-	sigBytes = append(sigBytes, cp.Key...)
-	sigBytes = append(sigBytes, algName...)
-	sigBytes = append(sigBytes, codedIv...)
-	sigBytes = append(sigBytes, codedCiphertext...)
+	associatedLenData := make([]byte, 8)
+	binary.BigEndian.PutUint64(associatedLenData, uint64(len(associatedData)*8))
 
-	mac := hmac.New(sha256.New, hmacKey)
-	mac.Write(sigBytes)
-	sig := mac.Sum(nil)
-
-	codedSig := base64.StdEncoding.EncodeToString(sig)
-
-	encBlock := cipherData{
-		Algorithm:  algName,
-		KeyId:      cp.Key,
-		Iv:         codedIv,
-		Ciphertext: codedCiphertext,
-		Signature:  codedSig,
-	}
-
-	dataBlock, err := json.Marshal(encBlock)
+	mac := hmac.New(sha512.New, hmacKey)
+	_, err = mac.Write(associatedData)
 	if err != nil {
 		return nil, err
 	}
+	_, err = mac.Write(aesCipher)
+	if err != nil {
+		return nil, err
+	}
+	_, err = mac.Write(associatedLenData)
+	if err != nil {
+		return nil, err
+	}
+	sig := mac.Sum(nil)
+	sig = sig[:32]
 
-	return dataBlock, nil
+	return append(aesCipher, sig...), nil
 }
 
-func (cp *AesCryptoProvider) Decrypt(data []byte) ([]byte, error) {
-	if cp.Key == "" {
-		return nil, newCryptoError(
-			CryptoProviderMissingPublicKey,
-			fmt.Sprintf("cryptographic providers require a non-nil, empty public and key identifier (kid) be configured for the alias: %s", cp.Alias),
-		)
-	}
-	if cp.HmacKey == "" {
-		return nil, newCryptoError(
-			CryptoProviderMissingPrivateKey,
-			fmt.Sprintf("cryptographic providers require a non-nil, empty private be configured for the alias: %s", cp.Alias),
-		)
+func (p *AeadAes256CbcHmacSha512Provider) Decrypt(result *EncryptionResult) ([]byte, error) {
+	kid, ok := result.GetKey()
+	if !ok {
+		return nil, wrapError(ErrInvalidCryptoKey, "failed to get kid from result")
 	}
 
-	key, err := cp.KeyStore.GetKey(cp.Key)
+	key, err := p.keyStore.Get(kid)
+	if err != nil {
+		return nil, wrapError(err, "failed to get key from store")
+	}
+
+	cipherText, err := result.GetFromBase64Encoded("ciphertext")
+	if err != nil {
+		return nil, wrapError(ErrInvalidCipherText, "could not get ciphertext from result")
+	}
+
+	b, err := p.decrypt(key.Bytes, cipherText, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	hmacKey := key
-	if cp.HmacKey != "" {
-		hmacKey, err = cp.KeyStore.GetKey(cp.HmacKey)
-		if err != nil {
-			return nil, err
-		}
+	return b, nil
+}
+
+func (p *AeadAes256CbcHmacSha512Provider) decrypt(key, ciphertext, associatedData []byte) ([]byte, error) {
+	err := p.verifyKeyLength(key)
+	if err != nil {
+		return nil, wrapError(err, "invalid key length")
 	}
 
-	algName, err := cp.getAlgNameFromKey(key, hmacKey)
+	aesKey := key[32:]
+	hmacKey := key[:32]
+
+	aesCipher := ciphertext[:len(ciphertext)-32]
+	authTag := ciphertext[len(ciphertext)-32:]
+
+	associatedLenData := make([]byte, 8)
+	binary.BigEndian.PutUint64(associatedLenData, uint64(len(associatedData)*8))
+
+	mac := hmac.New(sha512.New, hmacKey)
+	_, err = mac.Write(associatedData)
 	if err != nil {
 		return nil, err
 	}
-
-	var encBlock cipherData
-	err = json.Unmarshal(data, &encBlock)
+	_, err = mac.Write(aesCipher)
 	if err != nil {
 		return nil, err
 	}
-
-	if encBlock.KeyId != cp.Key {
-		return nil, errors.New("encryption key did not match configured key")
+	_, err = mac.Write(associatedLenData)
+	if err != nil {
+		return nil, err
 	}
-
-	if encBlock.Algorithm != algName {
-		return nil, errors.New("encryption algorithm did not match configured algorithm")
-	}
-
-	var sigBytes []byte
-	sigBytes = append(sigBytes, encBlock.KeyId...)
-	sigBytes = append(sigBytes, encBlock.Algorithm...)
-	sigBytes = append(sigBytes, encBlock.Iv...)
-	sigBytes = append(sigBytes, encBlock.Ciphertext...)
-
-	mac := hmac.New(sha256.New, hmacKey)
-	mac.Write(sigBytes)
 	sig := mac.Sum(nil)
+	sig = sig[:32]
 
-	srcSig, err := base64.StdEncoding.DecodeString(encBlock.Signature)
+	if !hmac.Equal(authTag, sig) {
+		return nil, ErrInvalidCipherText
+	}
+
+	block, err := aes.NewCipher(aesKey)
 	if err != nil {
 		return nil, err
 	}
 
-	if !hmac.Equal(sig, srcSig) {
-		return nil, newCryptoError(
-			CryptoProviderSigningFailed,
-			fmt.Sprintf("The authentication failed while checking the signature of the message payload for the alias: %s", cp.Alias),
-		)
-	}
+	iv := aesCipher[:16]
+	data := aesCipher[16:]
 
-	encData, err := base64.StdEncoding.DecodeString(encBlock.Ciphertext)
-	if err != nil {
-		return nil, err
-	}
+	cbc := cipher.NewCBCDecrypter(block, iv)
 
-	srcIv, err := base64.StdEncoding.DecodeString(encBlock.Iv)
-	if err != nil {
-		return nil, err
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-
-	cbc := cipher.NewCBCDecrypter(block, srcIv)
-
-	decData := make([]byte, len(encData))
-	cbc.CryptBlocks(decData, encData)
+	decData := make([]byte, len(data))
+	cbc.CryptBlocks(decData, data)
 
 	decData = pkcs5Trimming(decData)
 
 	return decData, nil
+}
+
+func (p *AeadAes256CbcHmacSha512Provider) verifyKeyLength(key []byte) error {
+	if len(key) != 64 {
+		return ErrInvalidCryptoKey
+	}
+
+	return nil
 }

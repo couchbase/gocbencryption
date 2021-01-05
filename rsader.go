@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Couchbase, Inc.
+ * Copyright (c) 2020 Couchbase, Inc.
  *
  * Use of this software is subject to the Couchbase Inc. Enterprise Subscription License Agreement
  * which may be found at https://www.couchbase.com/ESLA-11132015.
@@ -89,7 +89,7 @@ func parsePKCS1PrivateKey(der []byte) (*rsa.PrivateKey, error) {
 	return key, nil
 }
 
-func marshalPKCS1PrivateKey(key *rsa.PrivateKey) []byte {
+func marshalPKCS1PrivateKey(key *rsa.PrivateKey) ([]byte, error) {
 	key.Precompute()
 
 	version := 0
@@ -116,8 +116,11 @@ func marshalPKCS1PrivateKey(key *rsa.PrivateKey) []byte {
 		priv.AdditionalPrimes[i].Coeff = values.Coeff
 	}
 
-	b, _ := asn1.Marshal(priv)
-	return b
+	b, err := asn1.Marshal(priv)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 func parsePKCS1PublicKey(der []byte) (*rsa.PublicKey, error) {
@@ -143,10 +146,13 @@ func parsePKCS1PublicKey(der []byte) (*rsa.PublicKey, error) {
 	}, nil
 }
 
-func marshalPKCS1PublicKey(key *rsa.PublicKey) []byte {
-	derBytes, _ := asn1.Marshal(pkcs1PublicKey{
+func marshalPKCS1PublicKey(key *rsa.PublicKey) ([]byte, error) {
+	derBytes, err := asn1.Marshal(pkcs1PublicKey{
 		N: key.N,
 		E: key.E,
 	})
-	return derBytes
+	if err != nil {
+		return nil, err
+	}
+	return derBytes, nil
 }
