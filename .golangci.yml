@@ -1,0 +1,13 @@
+linters:
+  enable:
+    - bodyclose
+    - golint
+    - gosec
+    - unconvert
+linters-settings:
+  golint:
+    set-exit-status: true
+    min-confidence: 0.81
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
