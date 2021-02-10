@@ -9,7 +9,9 @@ package gocbfieldcrypt
 
 import (
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/asn1"
+	"encoding/pem"
 	"math/big"
 
 	"github.com/pkg/errors"
@@ -89,6 +91,25 @@ func parsePKCS1PrivateKey(der []byte) (*rsa.PrivateKey, error) {
 	return key, nil
 }
 
+// parsePKCS1PrivateKeyPem takes in the bytes of a PEM encoded RSA private key and returns the
+// corresponding rsa.PrivateKey struct
+//
+// Method from https://stackoverflow.com/questions/13555085/save-and-load-crypto-rsa-privatekey-to-and-from-the-disk
+// (answer from David W on Jun 22 '17)
+func parsePKCS1PrivateKeyPem(pemBytes []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, errors.New("Failed to parse PEM block containing the key")
+	}
+
+	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return priv, nil
+}
+
 func marshalPKCS1PrivateKey(key *rsa.PrivateKey) []byte {
 	key.Precompute()
 
@@ -141,6 +162,31 @@ func parsePKCS1PublicKey(der []byte) (*rsa.PublicKey, error) {
 		E: pub.E,
 		N: pub.N,
 	}, nil
+}
+
+// parsePKCS1PublicKeyPem takes in the bytes of a PEM encoded RSA public key and returns the
+// corresponding rsa.PublicKey struct
+//
+// Method from https://stackoverflow.com/questions/13555085/save-and-load-crypto-rsa-privatekey-to-and-from-the-disk
+// (answer from David W on Jun 22 '17)
+func parsePKCS1PublicKeyPem(pemBytes []byte) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, errors.New("Failed to parse PEM block containing the key")
+	}
+
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	switch pub := pub.(type) {
+	case *rsa.PublicKey:
+		return pub, nil
+	default:
+		break // fall through
+	}
+	return nil, errors.New("Key type is not RSA")
 }
 
 func marshalPKCS1PublicKey(key *rsa.PublicKey) []byte {
