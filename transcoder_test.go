@@ -33,24 +33,25 @@ func TestTranscoder(t *testing.T) {
 		},
 	}
 
-	provider := NewAeadAes256CbcHmacSha512Provider(keyring, "test-key")
-	provider.iv = iv
-	provider2 := NewAeadAes256CbcHmacSha512Provider(keyring, "mysecondkey")
-	provider2.iv = iv
+	provider := NewAeadAes256CbcHmacSha512Provider(keyring)
 
 	mgr := NewDefaultCryptoManager(nil)
 
-	err := mgr.RegisterEncrypter("one", provider)
+	defaultEncrypter := provider.EncrypterForKey("test-key")
+	defaultEncrypter.iv = iv
+	err := mgr.RegisterEncrypter("one", defaultEncrypter)
 	if err != nil {
 		t.Fatalf("Failed to register encrypter: %v", err)
 	}
 
-	err = mgr.RegisterEncrypter("two", provider2)
+	nonDefaultEncrypter := provider.EncrypterForKey("mysecondkey")
+	nonDefaultEncrypter.iv = iv
+	err = mgr.RegisterEncrypter("two", nonDefaultEncrypter)
 	if err != nil {
 		t.Fatalf("Failed to register encrypter: %v", err)
 	}
 
-	err = mgr.RegisterDecrypter(provider)
+	err = mgr.RegisterDecrypter(provider.Decrypter())
 	if err != nil {
 		t.Fatalf("Failed to register decrypter: %v", err)
 	}
@@ -105,22 +106,23 @@ func TestTranscoderComplex(t *testing.T) {
 		},
 	}
 
-	provider := NewAeadAes256CbcHmacSha512Provider(keyring, "test-key")
-	provider.iv = iv
+	provider := NewAeadAes256CbcHmacSha512Provider(keyring)
 
 	mgr := NewDefaultCryptoManager(nil)
 
-	err := mgr.RegisterEncrypter("one", provider)
+	defaultEncrypter := provider.EncrypterForKey("test-key")
+	defaultEncrypter.iv = iv
+	err := mgr.RegisterEncrypter("one", defaultEncrypter)
 	if err != nil {
 		t.Fatalf("Failed to register encrypter: %v", err)
 	}
 
-	err = mgr.DefaultEncrypter(provider)
+	err = mgr.DefaultEncrypter(defaultEncrypter)
 	if err != nil {
 		t.Fatalf("Failed to register default encrypter: %v", err)
 	}
 
-	err = mgr.RegisterDecrypter(provider)
+	err = mgr.RegisterDecrypter(provider.Decrypter())
 	if err != nil {
 		t.Fatalf("Failed to register decrypter: %v", err)
 	}
@@ -232,7 +234,7 @@ func TestTranscoderLegacyAes(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoProvider(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
 
 	mgr := NewDefaultCryptoManager(&DefaultCryptoManagerOptions{
 		EncryptedFieldPrefix: "__crypt_",

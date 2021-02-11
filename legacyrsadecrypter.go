@@ -15,26 +15,26 @@ import (
 	"github.com/pkg/errors"
 )
 
-type LegacyRsaCryptoProvider struct {
+type LegacyRsaCryptoDecrypter struct {
 	keyStore     Keyring
 	publicKeyID  string
 	privateKeyID string
 }
 
-func NewLegacyRsaCryptoProvider(keyring Keyring, publicKeyAlias, privateKeyAlias string) *LegacyRsaCryptoProvider {
-	return &LegacyRsaCryptoProvider{
+func NewLegacyRsaCryptoDecrypter(keyring Keyring, publicKeyAlias, privateKeyAlias string) *LegacyRsaCryptoDecrypter {
+	return &LegacyRsaCryptoDecrypter{
 		keyStore:     keyring,
 		publicKeyID:  publicKeyAlias,
 		privateKeyID: privateKeyAlias,
 	}
 }
 
-func (cp *LegacyRsaCryptoProvider) Algorithm() string {
+func (cp *LegacyRsaCryptoDecrypter) Algorithm() string {
 	return "RSA-2048-OEP"
 }
 
 // encrypt is used only for testing.
-func (cp *LegacyRsaCryptoProvider) encrypt(data []byte) (*EncryptionResult, error) {
+func (cp *LegacyRsaCryptoDecrypter) encrypt(data []byte) (*EncryptionResult, error) {
 	pubKeyBytes, err := cp.keyStore.Get(cp.publicKeyID)
 	if err != nil {
 		return nil, err
@@ -59,7 +59,7 @@ func (cp *LegacyRsaCryptoProvider) encrypt(data []byte) (*EncryptionResult, erro
 	return NewEncryptionResultFromMap(encBlock), nil
 }
 
-func (cp *LegacyRsaCryptoProvider) Decrypt(result *EncryptionResult) ([]byte, error) {
+func (cp *LegacyRsaCryptoDecrypter) Decrypt(result *EncryptionResult) ([]byte, error) {
 	if cp.publicKeyID == "" {
 		return nil, errors.New("cryptographic providers require a non-nil, empty public and key identifier (kid) be configured")
 	}

@@ -16,25 +16,54 @@ import (
 	"encoding/binary"
 )
 
+// AeadAes256CbcHmacSha512Provider provides a way to create encrypters and decrypters for the AEAD_AES_256_CBC_HMAC_SHA512
+// algorithm.
 type AeadAes256CbcHmacSha512Provider struct {
 	keyStore Keyring
+}
+
+// AeadAes256CbcHmacSha512ProviderEncrypter provides a way to perform encryption for the AEAD_AES_256_CBC_HMAC_SHA512 algorithm.
+type AeadAes256CbcHmacSha512ProviderEncrypter struct {
+	provider *AeadAes256CbcHmacSha512Provider
 	keyID    string
 	iv       []byte
 }
 
-func NewAeadAes256CbcHmacSha512Provider(keyring Keyring, keyID string) *AeadAes256CbcHmacSha512Provider {
+// AeadAes256CbcHmacSha512ProviderDecrypter provides a way to perform decryption for the AEAD_AES_256_CBC_HMAC_SHA512 algorithm.
+type AeadAes256CbcHmacSha512ProviderDecrypter struct {
+	provider *AeadAes256CbcHmacSha512Provider
+}
+
+// NewAeadAes256CbcHmacSha512Provider creates a new AeadAes256CbcHmacSha512Provider.
+func NewAeadAes256CbcHmacSha512Provider(keyring Keyring) *AeadAes256CbcHmacSha512Provider {
 	return &AeadAes256CbcHmacSha512Provider{
 		keyStore: keyring,
-		keyID:    keyID,
 	}
 }
 
-func (p *AeadAes256CbcHmacSha512Provider) Algorithm() string {
+func (p *AeadAes256CbcHmacSha512Provider) algorithm() string {
 	return "AEAD_AES_256_CBC_HMAC_SHA512"
 }
 
-func (p *AeadAes256CbcHmacSha512Provider) Encrypt(plaintext []byte) (*EncryptionResult, error) {
-	key, err := p.keyStore.Get(p.keyID)
+// EncrypterForKey returns a AeadAes256CbcHmacSha512ProviderEncrypter which will use the provided key.
+func (p *AeadAes256CbcHmacSha512Provider) EncrypterForKey(keyID string) *AeadAes256CbcHmacSha512ProviderEncrypter {
+	return &AeadAes256CbcHmacSha512ProviderEncrypter{
+		provider: p,
+		keyID:    keyID,
+		iv:       nil,
+	}
+}
+
+// Decrypter returns a AeadAes256CbcHmacSha512ProviderDecrypter.
+func (p *AeadAes256CbcHmacSha512Provider) Decrypter() *AeadAes256CbcHmacSha512ProviderDecrypter {
+	return &AeadAes256CbcHmacSha512ProviderDecrypter{
+		provider: p,
+	}
+}
+
+// Encrypt encrypts a plaintext into a EncryptionResult.
+func (p *AeadAes256CbcHmacSha512ProviderEncrypter) Encrypt(plaintext []byte) (*EncryptionResult, error) {
+	key, err := p.provider.keyStore.Get(p.keyID)
 	if err != nil {
 		return nil, wrapError(err, "failed to get key from store")
 	}
@@ -44,15 +73,15 @@ func (p *AeadAes256CbcHmacSha512Provider) Encrypt(plaintext []byte) (*Encryption
 		return nil, err
 	}
 
-	e := NewEncryptionResultFromAlgo(p.Algorithm())
+	e := NewEncryptionResultFromAlgo(p.provider.algorithm())
 	e.Put("kid", key.ID)
 	e.PutAndBase64Encode("ciphertext", b)
 
 	return e, nil
 }
 
-func (p *AeadAes256CbcHmacSha512Provider) encrypt(key, plaintext, associatedData []byte) ([]byte, error) {
-	err := p.verifyKeyLength(key)
+func (p *AeadAes256CbcHmacSha512ProviderEncrypter) encrypt(key, plaintext, associatedData []byte) ([]byte, error) {
+	err := p.provider.verifyKeyLength(key)
 	if err != nil {
 		return nil, wrapError(err, "invalid key length")
 	}
@@ -106,13 +135,19 @@ func (p *AeadAes256CbcHmacSha512Provider) encrypt(key, plaintext, associatedData
 	return append(aesCipher, sig...), nil
 }
 
-func (p *AeadAes256CbcHmacSha512Provider) Decrypt(result *EncryptionResult) ([]byte, error) {
+// Algorithm returns the algorithm used by this decrypter.
+func (p *AeadAes256CbcHmacSha512ProviderDecrypter) Algorithm() string {
+	return p.provider.algorithm()
+}
+
+// Decrypt decrypts the provided EncryptionResult.
+func (p *AeadAes256CbcHmacSha512ProviderDecrypter) Decrypt(result *EncryptionResult) ([]byte, error) {
 	kid, ok := result.GetKey()
 	if !ok {
 		return nil, wrapError(ErrInvalidCryptoKey, "failed to get kid from result")
 	}
 
-	key, err := p.keyStore.Get(kid)
+	key, err := p.provider.keyStore.Get(kid)
 	if err != nil {
 		return nil, wrapError(err, "failed to get key from store")
 	}
@@ -130,8 +165,8 @@ func (p *AeadAes256CbcHmacSha512Provider) Decrypt(result *EncryptionResult) ([]b
 	return b, nil
 }
 
-func (p *AeadAes256CbcHmacSha512Provider) decrypt(key, ciphertext, associatedData []byte) ([]byte, error) {
-	err := p.verifyKeyLength(key)
+func (p *AeadAes256CbcHmacSha512ProviderDecrypter) decrypt(key, ciphertext, associatedData []byte) ([]byte, error) {
+	err := p.provider.verifyKeyLength(key)
 	if err != nil {
 		return nil, wrapError(err, "invalid key length")
 	}

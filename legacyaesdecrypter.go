@@ -16,15 +16,15 @@ import (
 	"errors"
 )
 
-// LegacyAes128CryptoProvider provides a way to decrypt fields encrypted using AES 128 in a previous version of the
+// LegacyAes128CryptoDecrypter provides a way to decrypt fields encrypted using AES 128 in a previous version of the
 // library.
-type LegacyAes128CryptoProvider struct {
+type LegacyAes128CryptoDecrypter struct {
 	provider legacyAesCryptoProvider
 }
 
-// LegacyAes256CryptoProvider provides a way to decrypt fields encrypted using AES 256 in a previous version of the
+// LegacyAes256CryptoDecrypter provides a way to decrypt fields encrypted using AES 256 in a previous version of the
 // library.
-type LegacyAes256CryptoProvider struct {
+type LegacyAes256CryptoDecrypter struct {
 	provider legacyAesCryptoProvider
 }
 
@@ -34,9 +34,9 @@ type legacyAesCryptoProvider struct {
 	hmacKeyID string
 }
 
-// NewLegacyAes128CryptoProvider creates a new LegacyAes128CryptoProvider.
-func NewLegacyAes128CryptoProvider(keyring Keyring, keyID, hmacKeyAlias string) *LegacyAes128CryptoProvider {
-	return &LegacyAes128CryptoProvider{
+// NewLegacyAes128CryptoDecrypter creates a new LegacyAes128CryptoDecrypter.
+func NewLegacyAes128CryptoDecrypter(keyring Keyring, keyID, hmacKeyAlias string) *LegacyAes128CryptoDecrypter {
+	return &LegacyAes128CryptoDecrypter{
 		provider: legacyAesCryptoProvider{
 			keyStore:  keyring,
 			keyID:     keyID,
@@ -45,9 +45,9 @@ func NewLegacyAes128CryptoProvider(keyring Keyring, keyID, hmacKeyAlias string) 
 	}
 }
 
-// NewLegacyAes256CryptoProvider creates a new LegacyAes256CryptoProvider.
-func NewLegacyAes256CryptoProvider(keyring Keyring, keyID, hmacKeyAlias string) *LegacyAes256CryptoProvider {
-	return &LegacyAes256CryptoProvider{
+// NewLegacyAes256CryptoDecrypter creates a new LegacyAes256CryptoDecrypter.
+func NewLegacyAes256CryptoDecrypter(keyring Keyring, keyID, hmacKeyAlias string) *LegacyAes256CryptoDecrypter {
+	return &LegacyAes256CryptoDecrypter{
 		provider: legacyAesCryptoProvider{
 			keyStore:  keyring,
 			keyID:     keyID,
@@ -57,22 +57,22 @@ func NewLegacyAes256CryptoProvider(keyring Keyring, keyID, hmacKeyAlias string) 
 }
 
 // Algorithm returns the algorithm used by this provider.
-func (cp *LegacyAes128CryptoProvider) Algorithm() string {
+func (cp *LegacyAes128CryptoDecrypter) Algorithm() string {
 	return "AES-128-HMAC-SHA256"
 }
 
 // Decrypt decrypts the provided EncryptionResult.
-func (cp *LegacyAes128CryptoProvider) Decrypt(result *EncryptionResult) ([]byte, error) {
+func (cp *LegacyAes128CryptoDecrypter) Decrypt(result *EncryptionResult) ([]byte, error) {
 	return cp.provider.decrypt(result, cp.Algorithm())
 }
 
 // Algorithm returns the algorithm used by this provider.
-func (cp *LegacyAes256CryptoProvider) Algorithm() string {
+func (cp *LegacyAes256CryptoDecrypter) Algorithm() string {
 	return "AES-256-HMAC-SHA256"
 }
 
 // Decrypt decrypts the provided EncryptionResult.
-func (cp *LegacyAes256CryptoProvider) Decrypt(result *EncryptionResult) ([]byte, error) {
+func (cp *LegacyAes256CryptoDecrypter) Decrypt(result *EncryptionResult) ([]byte, error) {
 	return cp.provider.decrypt(result, cp.Algorithm())
 }
 

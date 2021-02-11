@@ -14,8 +14,10 @@ import (
 
 func TestAeadAes256CbcHmacSha512Provider_AssocData(t *testing.T) {
 	iv := []byte{0x1a, 0xf3, 0x8c, 0x2d, 0xc2, 0xb9, 0x6f, 0xfd, 0xd8, 0x66, 0x94, 0x09, 0x23, 0x41, 0xbc, 0x04}
-	p := &AeadAes256CbcHmacSha512Provider{
-		iv: iv,
+	p := &AeadAes256CbcHmacSha512Provider{}
+	penc := &AeadAes256CbcHmacSha512ProviderEncrypter{
+		provider: p,
+		iv:       iv,
 	}
 
 	key := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13,
@@ -35,7 +37,7 @@ func TestAeadAes256CbcHmacSha512Provider_AssocData(t *testing.T) {
 		0x69, 0x70, 0x6c, 0x65, 0x20, 0x6f, 0x66, 0x20, 0x41, 0x75, 0x67, 0x75, 0x73, 0x74, 0x65, 0x20,
 		0x4b, 0x65, 0x72, 0x63, 0x6b, 0x68, 0x6f, 0x66, 0x66, 0x73,
 	}
-	b, err := p.encrypt(key, plaintext, assocData)
+	b, err := penc.encrypt(key, plaintext, assocData)
 	if err != nil {
 		t.Fatalf("Expected no error but was %v", err)
 	}
@@ -58,7 +60,10 @@ func TestAeadAes256CbcHmacSha512Provider_AssocData(t *testing.T) {
 		t.Fatalf("Encrypted result did not equal expected value")
 	}
 
-	decBytes, err := p.decrypt(key, b, assocData)
+	dec := &AeadAes256CbcHmacSha512ProviderDecrypter{
+		provider: p,
+	}
+	decBytes, err := dec.decrypt(key, b, assocData)
 	if err != nil {
 		t.Fatalf("Expected no error but was %v", err)
 	}
@@ -85,15 +90,13 @@ func TestAeadAes256CbcHmacSha512Provider_EncryptDecrypt(t *testing.T) {
 			},
 		},
 	}
-	p := &AeadAes256CbcHmacSha512Provider{
-		iv:       iv,
-		keyID:    "mytestkey",
-		keyStore: keyStore,
-	}
+	p := NewAeadAes256CbcHmacSha512Provider(keyStore)
+	penc := p.EncrypterForKey("mytestkey")
+	penc.iv = iv
 
 	plain := []byte("\"The enemy knows the system.\"")
 
-	res, err := p.Encrypt(plain)
+	res, err := penc.Encrypt(plain)
 	if err != nil {
 		t.Fatalf("Encrypt failed with error: %v", err)
 	}
@@ -125,7 +128,7 @@ func TestAeadAes256CbcHmacSha512Provider_EncryptDecrypt(t *testing.T) {
 		t.Fatalf("Cipher text does not match expected")
 	}
 
-	decrypted, err := p.Decrypt(res)
+	decrypted, err := p.Decrypter().Decrypt(res)
 	if err != nil {
 		panic(err)
 	}
@@ -140,10 +143,11 @@ func TestAeadAes256CbcHmacSha512Provider_EncryptMissingKey(t *testing.T) {
 		keys: map[string]Key{},
 	}
 
-	p := NewAeadAes256CbcHmacSha512Provider(keyStore, "key")
+	p := NewAeadAes256CbcHmacSha512Provider(keyStore)
+	penc := p.EncrypterForKey("key")
 
 	plain := []byte("\"The enemy knows the system.\"")
-	_, err := p.Encrypt(plain)
+	_, err := penc.Encrypt(plain)
 	if !errors.Is(err, ErrCryptoKeyNotFound) {
 		t.Fatalf("Expected error to be key not found but was %v", err)
 	}
@@ -165,10 +169,11 @@ func TestAeadAes256CbcHmacSha512Provider_EncryptInvalidKey(t *testing.T) {
 		},
 	}
 
-	p := NewAeadAes256CbcHmacSha512Provider(keyStore, "mytestkey")
+	p := NewAeadAes256CbcHmacSha512Provider(keyStore)
+	penc := p.EncrypterForKey("mytestkey")
 
 	plain := []byte("\"The enemy knows the system.\"")
-	_, err := p.Encrypt(plain)
+	_, err := penc.Encrypt(plain)
 	if !errors.Is(err, ErrInvalidCryptoKey) {
 		t.Fatalf("Expected error to be invalid key but was %v", err)
 	}
@@ -190,7 +195,7 @@ func TestAeadAes256CbcHmacSha512Provider_DecryptInvalidKey(t *testing.T) {
 		},
 	}
 
-	p := NewAeadAes256CbcHmacSha512Provider(keyStore, "mytestkey")
+	p := NewAeadAes256CbcHmacSha512Provider(keyStore)
 
 	d := map[string]interface{}{
 		"alg":        "AEAD_AES_256_CBC_HMAC_SHA512",
@@ -198,7 +203,7 @@ func TestAeadAes256CbcHmacSha512Provider_DecryptInvalidKey(t *testing.T) {
 		"ciphertext": "GvOMLcK5b/3YZpQJI0G8BLm98oj20ZLdqKDV3MfTuGlWL4R5p5Deykuv2XLW4LcDvnOkmhuUSRbQ8QVEmbjq43XHdOm3ColJ6LzoaAtJihk=",
 	}
 
-	_, err := p.Decrypt(NewEncryptionResultFromMap(d))
+	_, err := p.Decrypter().Decrypt(NewEncryptionResultFromMap(d))
 	if !errors.Is(err, ErrInvalidCryptoKey) {
 		t.Fatalf("Expected error to be invalid key but was %v", err)
 	}
@@ -220,14 +225,14 @@ func TestAeadAes256CbcHmacSha512Provider_DecryptResultMissingKey(t *testing.T) {
 		},
 	}
 
-	p := NewAeadAes256CbcHmacSha512Provider(keyStore, "mytestkey")
+	p := NewAeadAes256CbcHmacSha512Provider(keyStore)
 
 	d := map[string]interface{}{
 		"alg":        "AEAD_AES_256_CBC_HMAC_SHA512",
 		"ciphertext": "GvOMLcK5b/3YZpQJI0G8BLm98oj20ZLdqKDV3MfTuGlWL4R5p5Deykuv2XLW4LcDvnOkmhuUSRbQ8QVEmbjq43XHdOm3ColJ6LzoaAtJihk=",
 	}
 
-	_, err := p.Decrypt(NewEncryptionResultFromMap(d))
+	_, err := p.Decrypter().Decrypt(NewEncryptionResultFromMap(d))
 	if !errors.Is(err, ErrInvalidCryptoKey) {
 		t.Fatalf("Expected error to be invalid key but was %v", err)
 	}
@@ -238,7 +243,7 @@ func TestAeadAes256CbcHmacSha512Provider_DecryptStoreMissingKey(t *testing.T) {
 		keys: map[string]Key{},
 	}
 
-	p := NewAeadAes256CbcHmacSha512Provider(keyStore, "mytestkey")
+	p := NewAeadAes256CbcHmacSha512Provider(keyStore)
 
 	d := map[string]interface{}{
 		"alg":        "AEAD_AES_256_CBC_HMAC_SHA512",
@@ -246,7 +251,7 @@ func TestAeadAes256CbcHmacSha512Provider_DecryptStoreMissingKey(t *testing.T) {
 		"ciphertext": "GvOMLcK5b/3YZpQJI0G8BLm98oj20ZLdqKDV3MfTuGlWL4R5p5Deykuv2XLW4LcDvnOkmhuUSRbQ8QVEmbjq43XHdOm3ColJ6LzoaAtJihk=",
 	}
 
-	_, err := p.Decrypt(NewEncryptionResultFromMap(d))
+	_, err := p.Decrypter().Decrypt(NewEncryptionResultFromMap(d))
 	if !errors.Is(err, ErrCryptoKeyNotFound) {
 		t.Fatalf("Expected error to be invalid key but was %v", err)
 	}
@@ -268,7 +273,7 @@ func TestAeadAes256CbcHmacSha512Provider_DecryptInvalidCipherText(t *testing.T) 
 		},
 	}
 
-	p := NewAeadAes256CbcHmacSha512Provider(keyStore, "mytestkey")
+	p := NewAeadAes256CbcHmacSha512Provider(keyStore)
 
 	d := map[string]interface{}{
 		"alg":        "AEAD_AES_256_CBC_HMAC_SHA512",
@@ -276,7 +281,7 @@ func TestAeadAes256CbcHmacSha512Provider_DecryptInvalidCipherText(t *testing.T) 
 		"ciphertext": "GvOMLcK5b/3YZpQJI0G8BLm98oj20ZLdqKDV3MfTuGlWL4RLzoaAtJihk=",
 	}
 
-	_, err := p.Decrypt(NewEncryptionResultFromMap(d))
+	_, err := p.Decrypter().Decrypt(NewEncryptionResultFromMap(d))
 	if !errors.Is(err, ErrInvalidCipherText) {
 		t.Fatalf("Expected error to be invalid cipher text but was %v", err)
 	}

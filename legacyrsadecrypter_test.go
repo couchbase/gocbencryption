@@ -56,7 +56,7 @@ func TestLegacyRsaCryptoProvider(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyRsaCryptoProvider(keyStore, "rsapubkey", "rsaprivkey")
+	provider := NewLegacyRsaCryptoDecrypter(keyStore, "rsapubkey", "rsaprivkey")
 
 	encB, err := json.Marshal(expected)
 	if err != nil {
