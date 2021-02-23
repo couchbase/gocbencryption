@@ -14,6 +14,10 @@ import (
 	"sort"
 )
 
+// Empty string isn't a valid json fieldname so we're safe to use this for special casing when a field contains
+// an actual golang map type.
+const anonymousMap = ""
+
 type encryptPathSorter struct {
 	paths   []encryptPath
 	sortAsc bool
@@ -44,24 +48,37 @@ type walker struct {
 	encryptPaths []encryptPath
 	currentPath  []string
 	defaultAlias string
+	sortAsc      bool
 }
 
-func newWalker(defaultAlias string) *walker {
+func newWalker(defaultAlias string, sortAsc bool) *walker {
 	return &walker{
 		defaultAlias: defaultAlias,
+		sortAsc:      sortAsc,
 	}
 }
 
 // Walk walks over the structure of the data and extracts any paths that should be encrypted.
 // The returned string slice is sorted in increasing order meaning that deeper paths come before their parents.
-func (w *walker) Walk(data interface{}, sortAsc bool) ([]encryptPath, error) {
+func (w *walker) Walk(data interface{}) ([]encryptPath, error) {
+	v := reflect.ValueOf(data)
+	val := data
+	if v.Kind() == reflect.Ptr {
+		val = reflect.Indirect(v).Interface()
+	}
+	tv := reflect.New(reflect.TypeOf(val)).Interface()
+
+	return w.walk(tv)
+}
+
+func (w *walker) walk(data interface{}) ([]encryptPath, error) {
 	if err := reflectwalk.Walk(data, w); err != nil {
 		return nil, err
 	}
 
 	sort.Sort(encryptPathSorter{
 		paths:   w.encryptPaths,
-		sortAsc: sortAsc,
+		sortAsc: w.sortAsc,
 	})
 
 	return w.encryptPaths, nil
@@ -93,20 +110,39 @@ func (w *walker) Interface(v reflect.Value) error {
 }
 
 func (w *walker) Map(v reflect.Value) error {
+	walker := newWalker(w.defaultAlias, w.sortAsc)
+	paths, err := walker.walk(reflect.New(v.Type().Elem()).Interface())
+	if err != nil {
+		return err
+	}
+
+	for _, path := range paths {
+		path.pathParts = append([]string{anonymousMap}, path.pathParts...)
+		path.pathParts = append(w.currentPath, path.pathParts...)
+		w.encryptPaths = append(w.encryptPaths, path)
+	}
 	return nil
 }
 
 func (w *walker) MapElem(m, k, v reflect.Value) error {
-	w.currentPath = append(w.currentPath, k.String())
 	return nil
 }
 
 func (w *walker) Slice(v reflect.Value) error {
+	walker := newWalker(w.defaultAlias, w.sortAsc)
+	paths, err := walker.walk(reflect.New(v.Type().Elem()).Interface())
+	if err != nil {
+		return err
+	}
+
+	for _, path := range paths {
+		path.pathParts = append(w.currentPath, path.pathParts...)
+		w.encryptPaths = append(w.encryptPaths, path)
+	}
 	return nil
 }
 
 func (w *walker) SliceElem(i int, v reflect.Value) error {
-	w.currentPath = append(w.currentPath, fmt.Sprintf("%d", i))
 	return nil
 }
 

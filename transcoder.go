@@ -12,7 +12,6 @@ import (
 	"errors"
 	"github.com/couchbase/gocb/v2"
 	"reflect"
-	"strconv"
 )
 
 type Transcoder struct {
@@ -39,20 +38,55 @@ func (t *Transcoder) Decode(data []byte, flags uint32, valuePtr interface{}) err
 	for valueType.Kind() == reflect.Ptr {
 		valueType = valueType.Elem()
 	}
-	if valueType.Kind() != reflect.Struct {
+	switch valueType.Kind() {
+	case reflect.Struct:
+	case reflect.Map:
+	case reflect.Slice:
+	default:
 		return transcoder.Decode(data, flags, valuePtr)
 	}
 
-	var rawMap map[string]interface{}
-	err := json.Unmarshal(data, &rawMap)
+	var raw interface{}
+	err := json.Unmarshal(data, &raw)
 	if err != nil {
 		return err
 	}
 
-	w := newWalker(defaultEncrypterAlias)
-	encryptedPaths, err := w.Walk(valuePtr, false)
+	w := newWalker(defaultEncrypterAlias, false)
+	encryptedPaths, err := w.Walk(valuePtr)
 	if err != nil {
 		return err
+	}
+
+	err = t.decodeElem(raw, encryptedPaths)
+	if err != nil {
+		return err
+	}
+
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+
+	return transcoder.Decode(b, flags, valuePtr)
+}
+
+func (t *Transcoder) decodeElem(raw interface{}, encryptedPaths []encryptPath) error {
+	var rawMap map[string]interface{}
+	switch rawT := raw.(type) {
+	case []interface{}:
+		for i := range rawT {
+			var err error
+			err = t.decodeElem(rawT[i], encryptedPaths)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	case map[string]interface{}:
+		rawMap = rawT
+	default:
+		return errors.New("unexpected data type")
 	}
 
 	for _, p := range encryptedPaths {
@@ -60,17 +94,7 @@ func (t *Transcoder) Decode(data []byte, flags uint32, valuePtr interface{}) err
 		basePath := pathParts[0]
 		if len(pathParts) == 1 {
 			mangledPath := t.mgr.Mangle(basePath)
-			data, ok := rawMap[mangledPath].(map[string]interface{})
-			if !ok {
-				return errors.New("encryption block was not expected type")
-			}
-			res, err := t.mgr.Decrypt(data)
-			if err != nil {
-				return err
-			}
-
-			var resVal interface{}
-			err = json.Unmarshal(res, &resVal)
+			resVal, err := t.processDecryption(rawMap[mangledPath], []string{})
 			if err != nil {
 				return err
 			}
@@ -80,18 +104,24 @@ func (t *Transcoder) Decode(data []byte, flags uint32, valuePtr interface{}) err
 			continue
 		}
 
-		rawMap[basePath], err = t.processDecryption(rawMap[basePath], pathParts[1:])
-		if err != nil {
-			return err
+		if pathParts[0] == anonymousMap {
+			for k, v := range rawMap {
+				var err error
+				rawMap[k], err = t.processDecryption(v, pathParts[1:])
+				if err != nil {
+					return err
+				}
+			}
+		} else {
+			var err error
+			rawMap[basePath], err = t.processDecryption(rawMap[basePath], pathParts[1:])
+			if err != nil {
+				return err
+			}
 		}
 	}
 
-	b, err := json.Marshal(rawMap)
-	if err != nil {
-		return err
-	}
-
-	return transcoder.Decode(b, flags, valuePtr)
+	return nil
 }
 
 // Encodes a Go type into bytes for storage. Uses a base transcoder to do the actual JSON encoding, defaulting to
@@ -113,53 +143,34 @@ func (t *Transcoder) Encode(value interface{}) ([]byte, uint32, error) {
 	for valueType.Kind() == reflect.Ptr {
 		valueType = valueType.Elem()
 	}
-	if valueType.Kind() != reflect.Struct {
-		return data, flags, nil
+	switch valueType.Kind() {
+	case reflect.Struct:
+	case reflect.Map:
+	case reflect.Slice:
+	default:
+		return transcoder.Encode(data)
 	}
 
 	// We walk the value type so that we can create a list of fields that we need to encrypt. We will only
 	// list those fields which will be encoded to JSON and also have an encrypt tag - there's no point in encrypting
 	// fields which aren't going to get written anyway.
-	w := newWalker(defaultEncrypterAlias)
-	encryptPaths, err := w.Walk(value, true)
+	w := newWalker(defaultEncrypterAlias, true)
+	encryptPaths, err := w.Walk(value)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	// We then decode the bytes into a map of string to interface. If this fails then the base encoder probably hasn't
 	// actually encoded the value to JSON.
-	var rawMap map[string]interface{}
+	var rawMap interface{}
 	err = json.Unmarshal(data, &rawMap)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// We go through the map accessing the parts that we need and replacing the value with the encrypted version.
-	// We do this depth first so that we can encrypt any nested fields first.
-	for _, p := range encryptPaths {
-		pathParts := p.pathParts
-		algo := p.algo
-		basePath := pathParts[0]
-		if len(pathParts) == 1 {
-			b, err := json.Marshal(rawMap[basePath])
-			if err != nil {
-				return nil, 0, err
-			}
-			res, err := t.mgr.Encrypt(b, algo)
-			if err != nil {
-				return nil, 0, err
-			}
-
-			newPath := t.mgr.Mangle(basePath)
-			delete(rawMap, basePath)
-			rawMap[newPath] = res
-			continue
-		}
-
-		rawMap[basePath], err = t.processEncryption(rawMap[basePath], pathParts[1:], algo)
-		if err != nil {
-			return nil, 0, err
-		}
+	err = t.encodeElem(rawMap, encryptPaths)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	b, err := json.Marshal(rawMap)
@@ -168,6 +179,65 @@ func (t *Transcoder) Encode(value interface{}) ([]byte, uint32, error) {
 	}
 
 	return b, flags, nil
+}
+
+func (t *Transcoder) encodeElem(raw interface{}, encryptedPaths []encryptPath) error {
+	var rawMap map[string]interface{}
+	switch rawT := raw.(type) {
+	case []interface{}:
+		for i := range rawT {
+			var err error
+			err = t.encodeElem(rawT[i], encryptedPaths)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	case map[string]interface{}:
+		rawMap = rawT
+	default:
+		return errors.New("unexpected data type")
+	}
+	// We go through the map accessing the parts that we need and replacing the value with the encrypted version.
+	// We do this depth first so that we can encrypt any nested fields first.
+	for _, p := range encryptedPaths {
+		pathParts := p.pathParts
+		algo := p.algo
+		basePath := pathParts[0]
+		if len(pathParts) == 1 {
+			b, err := json.Marshal(rawMap[basePath])
+			if err != nil {
+				return err
+			}
+			res, err := t.mgr.Encrypt(b, algo)
+			if err != nil {
+				return err
+			}
+
+			newPath := t.mgr.Mangle(basePath)
+			delete(rawMap, basePath)
+			rawMap[newPath] = res
+			continue
+		}
+
+		if pathParts[0] == anonymousMap {
+			for k, v := range rawMap {
+				var err error
+				rawMap[k], err = t.processEncryption(v, pathParts[1:], algo)
+				if err != nil {
+					return err
+				}
+			}
+		} else {
+			var err error
+			rawMap[basePath], err = t.processEncryption(rawMap[basePath], pathParts[1:], algo)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (t *Transcoder) processEncryption(val interface{}, pathParts []string, algo string) (interface{}, error) {
@@ -183,14 +253,35 @@ func (t *Transcoder) processEncryption(val interface{}, pathParts []string, algo
 
 		return res, nil
 	}
-	currentPath := pathParts[0]
-	if len(pathParts) == 1 {
-		currentPath = t.mgr.Mangle(currentPath)
+
+	if pathParts[0] == anonymousMap {
+		if val == nil {
+			return val, nil
+		}
+		// This has to be a map, if it isn't then something naughty has happened.
+		vAssert, ok := val.(map[string]interface{})
+		if !ok {
+			return nil, errors.New("unexpected value found when expecting a golang map type")
+		}
+		for k, v := range vAssert {
+			var err error
+			vAssert[k], err = t.processEncryption(v, pathParts[1:], algo)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return val, nil
 	}
 
-	nextPathParts := pathParts[1:]
 	switch typ := val.(type) {
 	case map[string]interface{}:
+		currentPath := pathParts[0]
+		if len(pathParts) == 1 {
+			currentPath = t.mgr.Mangle(currentPath)
+		}
+
+		nextPathParts := pathParts[1:]
+
 		var err error
 		typ[currentPath], err = t.processEncryption(typ[pathParts[0]], nextPathParts, algo)
 		if err != nil {
@@ -203,15 +294,15 @@ func (t *Transcoder) processEncryption(val interface{}, pathParts []string, algo
 
 		return typ, nil
 	case []interface{}:
-		var err error
-		i, err := strconv.Atoi(currentPath)
-		if err != nil {
-			return nil, err
+		for i := range typ {
+			var err error
+			typ[i], err = t.processEncryption(typ[i], pathParts, algo)
+			if err != nil {
+				return nil, err
+			}
 		}
-		typ[i], err = t.processEncryption(typ[i], nextPathParts, algo)
-		if err != nil {
-			return nil, err
-		}
+		return typ, nil
+	case nil:
 		return typ, nil
 	}
 
@@ -237,6 +328,26 @@ func (t *Transcoder) processDecryption(val interface{}, pathParts []string) (int
 
 		return resVal, nil
 	}
+
+	if pathParts[0] == anonymousMap {
+		if val == nil {
+			return val, nil
+		}
+		// This has to be a map, if it isn't then something naughty has happened.
+		vAssert, ok := val.(map[string]interface{})
+		if !ok {
+			return nil, errors.New("unexpected value found when expecting a golang map type")
+		}
+		for k, v := range vAssert {
+			var err error
+			vAssert[k], err = t.processDecryption(v, pathParts[1:])
+			if err != nil {
+				return nil, err
+			}
+		}
+		return val, nil
+	}
+
 	currentPath := pathParts[0]
 	if len(pathParts) == 1 {
 		currentPath = t.mgr.Mangle(currentPath)
@@ -256,16 +367,15 @@ func (t *Transcoder) processDecryption(val interface{}, pathParts []string) (int
 		}
 		return typ, nil
 	case []interface{}:
-		var err error
-		i, err := strconv.Atoi(currentPath)
-		if err != nil {
-			return nil, err
+		for i := range typ {
+			var err error
+			typ[i], err = t.processDecryption(typ[i], pathParts)
+			if err != nil {
+				return nil, err
+			}
 		}
-
-		typ[i], err = t.processDecryption(typ[i], nextPathParts)
-		if err != nil {
-			return nil, err
-		}
+		return typ, nil
+	case nil:
 		return typ, nil
 	}
 
