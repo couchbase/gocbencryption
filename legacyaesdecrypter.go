@@ -28,30 +28,34 @@ type LegacyAes256CryptoDecrypter struct {
 	provider legacyAesCryptoProvider
 }
 
+// LegacyKeyFn is used by legacy decrypters to enable a single decrypter to support multiple encryption keys.
+// The function takes the name of a public key and returns the name of a private key.
+// Any errors returned will be returned by the decrypter.
+type LegacyKeyFn func(string) (string, error)
+
 type legacyAesCryptoProvider struct {
-	keyStore  Keyring
-	keyID     string
-	hmacKeyID string
+	keyStore Keyring
+	keyFn    func(string) (string, error)
 }
 
 // NewLegacyAes128CryptoDecrypter creates a new LegacyAes128CryptoDecrypter.
-func NewLegacyAes128CryptoDecrypter(keyring Keyring, keyID, hmacKeyAlias string) *LegacyAes128CryptoDecrypter {
+// If the keyFn returns an empty string then no hmac key will be used.
+func NewLegacyAes128CryptoDecrypter(keyring Keyring, keyFn LegacyKeyFn) *LegacyAes128CryptoDecrypter {
 	return &LegacyAes128CryptoDecrypter{
 		provider: legacyAesCryptoProvider{
-			keyStore:  keyring,
-			keyID:     keyID,
-			hmacKeyID: hmacKeyAlias,
+			keyStore: keyring,
+			keyFn:    keyFn,
 		},
 	}
 }
 
 // NewLegacyAes256CryptoDecrypter creates a new LegacyAes256CryptoDecrypter.
-func NewLegacyAes256CryptoDecrypter(keyring Keyring, keyID, hmacKeyAlias string) *LegacyAes256CryptoDecrypter {
+// If the keyFn returns an empty string then no hmac key will be used.
+func NewLegacyAes256CryptoDecrypter(keyring Keyring, keyFn LegacyKeyFn) *LegacyAes256CryptoDecrypter {
 	return &LegacyAes256CryptoDecrypter{
 		provider: legacyAesCryptoProvider{
-			keyStore:  keyring,
-			keyID:     keyID,
-			hmacKeyID: hmacKeyAlias,
+			keyStore: keyring,
+			keyFn:    keyFn,
 		},
 	}
 }
@@ -82,18 +86,19 @@ func (cp *legacyAesCryptoProvider) decrypt(result *EncryptionResult, algo string
 		return nil, wrapError(ErrInvalidCryptoKey, "kid not found in result")
 	}
 
-	if keyID != cp.keyID {
-		return nil, wrapError(ErrInvalidCryptoKey, "encryption key did not match configured key")
-	}
-
 	key, err := cp.keyStore.Get(keyID)
 	if err != nil {
 		return nil, wrapError(err, "failed to get key from store")
 	}
 
-	hmacKey := key
-	if cp.hmacKeyID != "" {
-		hmacKey, err = cp.keyStore.Get(cp.hmacKeyID)
+	hmacKeyID, err := cp.keyFn(key.ID)
+	if err != nil {
+		return nil, wrapError(err, "failed to get key from key function")
+	}
+
+	var hmacKey Key
+	if hmacKeyID != "" {
+		hmacKey, err = cp.keyStore.Get(hmacKeyID)
 		if err != nil {
 			return nil, wrapError(err, "failed to get key from store")
 		}

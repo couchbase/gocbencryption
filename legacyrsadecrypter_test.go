@@ -9,7 +9,10 @@ package gocbfieldcrypt
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -56,19 +59,36 @@ func TestLegacyRsaCryptoProvider(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyRsaCryptoDecrypter(keyStore, "rsapubkey", "rsaprivkey")
+	provider := NewLegacyRsaCryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "rsapubkey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "rsaprivkey", nil
+	})
 
 	encB, err := json.Marshal(expected)
 	if err != nil {
 		t.Fatalf("Marshal failed with error: %v", err)
 	}
 
-	testEncDoc, err := provider.encrypt(encB)
+	pubKey, err := parsePKCS1PublicKey(rsaPublicKey)
 	if err != nil {
-		t.Fatalf("Encrypt failed with error: %v", err)
+		t.Fatalf("Failed to parse public key: %v", err)
 	}
 
-	b, err := provider.Decrypt(testEncDoc)
+	ciphertext, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, pubKey, encB, nil)
+	if err != nil {
+		t.Fatalf("Failed to encrypt data: %v", err)
+	}
+
+	encBlock := map[string]interface{}{
+		"kid":        "rsapubkey",
+		"alg":        "RSA-2048-OEP",
+		"ciphertext": base64.StdEncoding.EncodeToString(ciphertext),
+	}
+
+	b, err := provider.Decrypt(&EncryptionResult{m: encBlock})
 	if err != nil {
 		t.Fatalf("Decrypt failed with error: %v", err)
 	}
