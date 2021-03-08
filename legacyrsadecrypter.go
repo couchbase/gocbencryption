@@ -15,70 +15,40 @@ import (
 	"github.com/pkg/errors"
 )
 
+// LegacyRsaCryptoDecrypter provides a way to decrypt fields encrypted using RSA in a previous version of the
+// library.
 type LegacyRsaCryptoDecrypter struct {
-	keyStore     Keyring
-	publicKeyID  string
-	privateKeyID string
+	keyStore Keyring
+	keyFn    LegacyKeyFn
 }
 
-func NewLegacyRsaCryptoDecrypter(keyring Keyring, publicKeyAlias, privateKeyAlias string) *LegacyRsaCryptoDecrypter {
+// NewLegacyRsaCryptoDecrypter creates a new LegacyRsaCryptoDecrypter.
+func NewLegacyRsaCryptoDecrypter(keyring Keyring, keyFn LegacyKeyFn) *LegacyRsaCryptoDecrypter {
 	return &LegacyRsaCryptoDecrypter{
-		keyStore:     keyring,
-		publicKeyID:  publicKeyAlias,
-		privateKeyID: privateKeyAlias,
+		keyStore: keyring,
+		keyFn:    keyFn,
 	}
 }
 
+// Algorithm returns the algorithm used by this provider.
 func (cp *LegacyRsaCryptoDecrypter) Algorithm() string {
 	return "RSA-2048-OEP"
 }
 
-// encrypt is used only for testing.
-func (cp *LegacyRsaCryptoDecrypter) encrypt(data []byte) (*EncryptionResult, error) {
-	pubKeyBytes, err := cp.keyStore.Get(cp.publicKeyID)
-	if err != nil {
-		return nil, err
-	}
-
-	pubKey, err := parsePKCS1PublicKey(pubKeyBytes.Bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	ciphertext, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, pubKey, data, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	encBlock := map[string]interface{}{
-		"kid":        cp.publicKeyID,
-		"alg":        "RSA-2048-OEP",
-		"ciphertext": base64.StdEncoding.EncodeToString(ciphertext),
-	}
-
-	return NewEncryptionResultFromMap(encBlock), nil
-}
-
+// Decrypt decrypts the provided EncryptionResult.
 func (cp *LegacyRsaCryptoDecrypter) Decrypt(result *EncryptionResult) ([]byte, error) {
-	if cp.publicKeyID == "" {
-		return nil, errors.New("cryptographic providers require a non-nil, empty public and key identifier (kid) be configured")
-	}
-	if cp.privateKeyID == "" {
-		return nil, errors.New("asymmetric key cryptographic providers require a non-nil, empty signing key be configured")
-	}
-
 	keyID, ok := result.GetKey()
 	if !ok {
 		return nil, wrapError(ErrCryptoKeyNotFound, "kid not found in result")
 	}
 
-	privateKey, err := cp.keyStore.Get(cp.privateKeyID)
+	privateKeyID, err := cp.keyFn(keyID)
+	if err != nil {
+		return nil, wrapError(err, "failed to get key from key function")
+	}
+	privateKey, err := cp.keyStore.Get(privateKeyID)
 	if err != nil {
 		return nil, wrapError(err, "failed to get key from store")
-	}
-
-	if keyID != cp.publicKeyID {
-		return nil, wrapError(ErrInvalidCryptoKey, "encryption key did not match configured key")
 	}
 
 	cipherText, ok := result.Get("ciphertext")

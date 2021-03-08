@@ -8,6 +8,7 @@ package gocbfieldcrypt
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -300,7 +301,13 @@ func TestTranscoderLegacyAes(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	mgr := NewDefaultCryptoManager(&DefaultCryptoManagerOptions{
 		EncryptedFieldPrefix: "__crypt_",

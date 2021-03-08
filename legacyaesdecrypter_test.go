@@ -28,7 +28,13 @@ func TestLegacyAesCryptoProvider(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	testEncDoc := map[string]interface{}{
 		"alg":        "AES-256-HMAC-SHA256",
@@ -68,7 +74,13 @@ func TestLegacyAesCryptoProvider_DecryptMissingKid(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	testEncDoc := map[string]interface{}{
 		"alg":        "AES-256-HMAC-SHA256",
@@ -97,7 +109,13 @@ func TestLegacyAesCryptoProvider_DecryptNotMatchingKid(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	testEncDoc := map[string]interface{}{
 		"alg":        "AES-256-HMAC-SHA256",
@@ -108,7 +126,7 @@ func TestLegacyAesCryptoProvider_DecryptNotMatchingKid(t *testing.T) {
 	}
 
 	_, err := provider.Decrypt(NewEncryptionResultFromMap(testEncDoc))
-	if !errors.Is(err, ErrInvalidCryptoKey) {
+	if !errors.Is(err, ErrCryptoKeyNotFound) {
 		t.Fatalf("Decrypt should have failed with invalid crypto key, was: %v", err)
 	}
 }
@@ -123,7 +141,13 @@ func TestLegacyAesCryptoProvider_DecryptStoreMissingKid(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	testEncDoc := map[string]interface{}{
 		"alg":        "AES-256-HMAC-SHA256",
@@ -149,7 +173,13 @@ func TestLegacyAesCryptoProvider_DecryptStoreMissingHmacKid(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	testEncDoc := map[string]interface{}{
 		"alg":        "AES-256-HMAC-SHA256",
@@ -179,7 +209,13 @@ func TestLegacyAesCryptoProvider_DecryptMissingAlg(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	testEncDoc := map[string]interface{}{
 		"kid":        "mypublickey",
@@ -208,7 +244,13 @@ func TestLegacyAesCryptoProvider_DecryptNonMatchingAlg(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	testEncDoc := map[string]interface{}{
 		"alg":        "AES-128-HMAC-SHA256",
@@ -238,7 +280,13 @@ func TestLegacyAesCryptoProvider_DecryptMissingIV(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	testEncDoc := map[string]interface{}{
 		"alg":        "AES-128-HMAC-SHA256",
@@ -267,7 +315,13 @@ func TestLegacyAesCryptoProvider_DecryptMissingCiphertext(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	testEncDoc := map[string]interface{}{
 		"alg": "AES-256-HMAC-SHA256",
@@ -296,7 +350,13 @@ func TestLegacyAesCryptoProvider_DecryptMissingSig(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	testEncDoc := map[string]interface{}{
 		"alg":        "AES-256-HMAC-SHA256",
@@ -325,7 +385,13 @@ func TestLegacyAesCryptoProvider_DecryptInvalidCiphertext(t *testing.T) {
 		},
 	}
 
-	provider := NewLegacyAes256CryptoDecrypter(keyStore, "mypublickey", "myhmackey")
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
 
 	testEncDoc := map[string]interface{}{
 		"alg":        "AES-256-HMAC-SHA256",
