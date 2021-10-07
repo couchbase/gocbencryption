@@ -301,6 +301,43 @@ func TestLegacyAesCryptoProvider_DecryptMissingIV(t *testing.T) {
 	}
 }
 
+
+func TestLegacyAesCryptoProvider_DecryptInvalidIV(t *testing.T) {
+	keyStore := &InsecureKeyring{
+		keys: map[string]Key{
+			"mypublickey": {
+				ID:    "mypublickey",
+				Bytes: []byte("!mysecretkey#9^5usdk39d&dlf)03sL"),
+			},
+			"myhmackey": {
+				ID:    "myhmackey",
+				Bytes: []byte("myauthpassword"),
+			},
+		},
+	}
+
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
+
+	testEncDoc := map[string]interface{}{
+		"alg":        "AES-128-HMAC-SHA256",
+		"kid":        "mypublickey",
+		"iv":         "bfq84/46Qjet3EEQ1HUwSg==",
+		"ciphertext": "sR6AFEIGWS5Fy9QObNOhbCgfg3vXH4NHVRK1qkhKLQqjkByg2n69lot89qFEJuBsVNTXR77PZR6RjN4h4M9evg==",
+		"sig":        "rT89aCj1WosYjWHHu0mf92S195vYnEGA/reDnYelQsM=",
+	}
+
+	_, err := provider.Decrypt(NewEncryptionResultFromMap(testEncDoc))
+	if err == nil {
+		t.Fatalf("Decrypt should have failed")
+	}
+}
+
 func TestLegacyAesCryptoProvider_DecryptMissingCiphertext(t *testing.T) {
 	keyStore := &InsecureKeyring{
 		keys: map[string]Key{
@@ -333,6 +370,43 @@ func TestLegacyAesCryptoProvider_DecryptMissingCiphertext(t *testing.T) {
 	_, err := provider.Decrypt(NewEncryptionResultFromMap(testEncDoc))
 	if err == nil {
 		t.Fatalf("Decrypt should have failed")
+	}
+}
+
+
+func TestLegacyAesCryptoProvider_DecryptInvalidCiphertext(t *testing.T) {
+	keyStore := &InsecureKeyring{
+		keys: map[string]Key{
+			"mypublickey": {
+				ID:    "mypublickey",
+				Bytes: []byte("!mysecretkey#9^5usdk39d&dlf)03sL"),
+			},
+			"myhmackey": {
+				ID:    "myhmackey",
+				Bytes: []byte("myauthpassword"),
+			},
+		},
+	}
+
+	provider := NewLegacyAes256CryptoDecrypter(keyStore, func(key string) (string, error) {
+		if key != "mypublickey" {
+			return "", errors.New("invalid key")
+		}
+
+		return "myhmackey", nil
+	})
+
+	testEncDoc := map[string]interface{}{
+		"alg":        "AES-256-HMAC-SHA256",
+		"kid":        "mypublickey",
+		"iv":         "Cfq84/46Qjet3EEQ1HUwSg==",
+		"ciphertext": "sR6AFEIGWS5Fy9QObNOhbCgfg3vXH4NHVRK1qkhKLQqjkByg2n69lot89=",
+		"sig":        "rT89aCj1WosYjWHHu0mf92S195vYnEGA/reDnYelQsM=",
+	}
+
+	_, err := provider.Decrypt(NewEncryptionResultFromMap(testEncDoc))
+	if !errors.Is(err, ErrInvalidCipherText) {
+		t.Fatalf("Decrypt should have failed with invalid cipher text, was: %v", err)
 	}
 }
 
@@ -371,7 +445,7 @@ func TestLegacyAesCryptoProvider_DecryptMissingSig(t *testing.T) {
 	}
 }
 
-func TestLegacyAesCryptoProvider_DecryptInvalidCiphertext(t *testing.T) {
+func TestLegacyAesCryptoProvider_DecryptInvalidSig(t *testing.T) {
 	keyStore := &InsecureKeyring{
 		keys: map[string]Key{
 			"mypublickey": {
@@ -397,12 +471,13 @@ func TestLegacyAesCryptoProvider_DecryptInvalidCiphertext(t *testing.T) {
 		"alg":        "AES-256-HMAC-SHA256",
 		"kid":        "mypublickey",
 		"iv":         "Cfq84/46Qjet3EEQ1HUwSg==",
-		"ciphertext": "sR6AFEIGWS5Fy9QObNOhbCgfg3vXH4NHVRK1qkhKLQqjkByg2n69lot89=",
-		"sig":        "rT89aCj1WosYjWHHu0mf92S195vYnEGA/reDnYelQsM=",
+		"ciphertext": "sR6AFEIGWS5Fy9QObNOhbCgfg3vXH4NHVRK1qkhKLQqjkByg2n69lot89qFEJuBsVNTXR77PZR6RjN4h4M9evg==",
+		"sig":        "sT89aCj1WosYjWHHu0mf92S195vYnEGA/reDnYelQsM=",
 	}
 
 	_, err := provider.Decrypt(NewEncryptionResultFromMap(testEncDoc))
-	if !errors.Is(err, ErrInvalidCipherText) {
-		t.Fatalf("Decrypt should have failed with invalid cipher text, was: %v", err)
+	if err == nil {
+		t.Fatalf("Decrypt should have failed")
 	}
 }
+
